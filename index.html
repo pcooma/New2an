@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SICET 2026 — Conference Registration</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css?v=17">
+    <style>@keyframes sicet-spin { to { transform: rotate(360deg); } }</style>
+</head>
+
+<body>
+
+    <!-- Settings loading overlay — shown until Drive settings are resolved -->
+    <div id="settings-loading-overlay" style="position:fixed;inset:0;background:rgba(9,18,9,0.93);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;">
+        <div style="width:46px;height:46px;border:4px solid rgba(197,215,58,0.15);border-top-color:#c5d73a;border-radius:50%;animation:sicet-spin 0.8s linear infinite;"></div>
+        <p style="color:#e8ede8;font-size:0.95rem;font-family:'Outfit',sans-serif;margin:0;font-weight:500;">Loading settings…</p>
+        <p style="color:rgba(232,237,232,0.45);font-size:0.78rem;font-family:'Outfit',sans-serif;margin:0;">Connecting to Google Drive</p>
+    </div>
+
+    <!-- SICET 2026 Conference Banner -->
+    <div style="width:100%;background:#1b3a1a;line-height:0;padding:12px 0;">
+        <img src="banner.png" alt="SICET 2026 - 5th SLIIT International Conference on Engineering and Technology" style="width:75%;max-width:1050px;height:auto;display:block;margin:0 auto;border-radius:6px;">
+    </div>
+
+    <!-- Admin Login Modal -->
+    <div id="admin-login-modal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3><i class='bx bx-lock-alt'></i> Admin Login</h3>
+                <button class="modal-close" id="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="admin-username">Username</label>
+                    <input type="email" id="admin-username" placeholder="Enter admin email" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="admin-password">Password</label>
+                    <input type="password" id="admin-password" placeholder="Enter password" autocomplete="current-password">
+                </div>
+                <p id="login-error" class="login-error hidden">Invalid credentials. Please try again.</p>
+                <button id="btn-login-submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:0.5rem;">
+                    <i class='bx bx-log-in'></i> Login
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="background-globes">
+        <div class="globe globe-1"></div>
+        <div class="globe globe-2"></div>
+        <div class="globe globe-3"></div>
+    </div>
+
+    <nav class="navbar">
+        <div class="nav-content">
+            <h1 class="logo">SICET<span>2026</span></h1>
+            <div class="nav-links">
+                <button class="nav-btn active" id="nav-form">Registration</button>
+                <button class="nav-btn" id="nav-admin" style="display:none;">Dashboard</button>
+                <button class="nav-btn" id="nav-settings"><i class='bx bx-lock-alt'></i> Admin Login</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        <!-- Registration Form Section -->
+        <section id="form-section" class="view-section active">
+            <div class="form-wrapper glass-panel">
+                <!-- ── Returning Registrant Lookup ── placed here so it is the FIRST thing visible -->
+                <div style="background:rgba(74,104,255,0.07);border:1px solid rgba(74,104,255,0.22);border-radius:var(--card-radius);padding:18px 24px;">
+                    <h4 style="margin:0 0 5px;color:var(--text-light);font-size:0.97rem;display:flex;align-items:center;gap:8px;">
+                        <i class='bx bx-history' style="color:var(--accent);font-size:1.15rem;"></i>Already Registered? Reload Your Submission
+                    </h4>
+                    <p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 12px;">Enter the Reference ID and email address used for the original registration. Both are required to protect your saved personal and payment details.</p>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <input type="text" id="lookup-ref-id" aria-label="Registration Reference ID" autocomplete="off" placeholder="E.g. SICET2026-1234567" style="flex:1;min-width:180px;padding:9px 12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.18);border-radius:8px;color:var(--text-light);font-size:0.9rem;outline:none;">
+                        <input type="email" id="lookup-email" aria-label="Registration email" autocomplete="email" placeholder="Registration email" style="flex:1;min-width:200px;padding:9px 12px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.18);border-radius:8px;color:var(--text-light);font-size:0.9rem;outline:none;">
+                        <button type="button" id="btn-lookup-ref" class="btn btn-secondary btn-sm" style="white-space:nowrap;padding:9px 18px;">
+                            <i class='bx bx-search'></i> Load Registration
+                        </button>
+                    </div>
+                </div>
+                <div style="border-top:1px solid rgba(255,255,255,0.07);margin:24px 0 20px;"></div>
+
+                <div class="form-header">
+                    <h2>New Registration</h2>
+                    <p>Complete this form to register for SICET 2026. You may register for the Main Conference, Excellence Award, Pre-Conference Workshops, and/or Excursion.</p>
+                </div>
+
+                <form id="registration-form" novalidate>
+                    <!-- Common Fields -->
+                    <div class="form-group row">
+                        <div class="input-field col">
+                            <label for="title">Title <span class="required">*</span></label>
+                            <select id="title" name="Title" required>
+                                <option value="" disabled selected>Select Title</option>
+                                <option value="Mr.">Mr.</option>
+                                <option value="Ms.">Ms.</option>
+                                <option value="Dr.">Dr.</option>
+                                <option value="Prof.">Prof.</option>
+                                <option value="Rev.">Rev.</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="input-field col-large">
+                            <label for="fullName">Full Name with Initials <span class="required">*</span></label>
+                            <input type="text" id="fullName" name="Full_Name" placeholder="E.g. J. Doe" required oninput="var w=document.getElementById('wa-name');if(w)w.value=this.value;renderWaPreview();">
+                        </div>
+                    </div>
+
+                    <div class="form-group row">
+                        <div class="input-field col">
+                            <label for="email">Email Address <span class="required">*</span></label>
+                            <input type="email" id="email" name="Email" placeholder="your.email@example.com" required>
+                        </div>
+                        <div class="input-field col">
+                            <label for="phone">Phone Number (with country code) <span class="required">*</span></label>
+                            <input type="tel" id="phone" name="Phone" placeholder="+94 77 123 4567" required oninput="var w=document.getElementById('wa-mobile');if(w)w.value=this.value;renderWaPreview();">
+                        </div>
+                    </div>
+
+                        <div class="form-group">
+                            <label for="organization">Organization / Company <span class="required">*</span></label>
+                            <input type="text" id="organization" name="Organization"
+                                placeholder="Enter your organization name" required>
+                        </div>
+                        <div class="highlight-box" style="margin-bottom:20px;padding:12px 16px;">
+                            <strong style="color:var(--accent);">Authors:</strong>
+                            <span style="color:var(--text-muted);">Enter the contact information of the presenting author above. Register other authors separately as participants if they will attend.</span>
+                        </div>
+
+                    <!-- 1. Identity Phase -->
+                    <div class="form-group highlight-box" style="margin-bottom: 25px;">
+                        <h4 style="margin-bottom: 15px; color: var(--accent);">Attendee Profile</h4>
+                        <div class="form-group row" style="margin-bottom: 0;">
+                            <div class="input-field col">
+                                <label for="attendeeRegion">Attendee Region <span class="required">*</span></label>
+                                <select id="attendeeRegion" name="Attendee_Region" class="price-trigger" required>
+                                    <option value="" disabled selected>Select Region</option>
+                                    <option value="Local">Local (Sri Lanka)</option>
+                                    <option value="SAARC">SAARC Countries</option>
+                                    <option value="Non-SAARC">Non-SAARC Countries</option>
+                                </select>
+                            </div>
+                            <div id="country-field-group" class="input-field col">
+                                <label for="country">Country <span class="required">*</span></label>
+                                <input type="text" id="country" name="Country" placeholder="E.g. Canada" required>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-top: 15px;">
+                            <label for="attendeeCategory">Attendee Category <span class="required">*</span></label>
+                            <select id="attendeeCategory" name="Attendee_Category" class="price-trigger" required>
+                                <option value="" disabled selected>Select Category</option>
+                                <option value="Author">Author</option>
+                                <option value="Non-Author">Non-Author</option>
+                                <option value="Student">Student</option>
+                                <option value="Workshop Attendee">Workshop Attendee</option>
+                            </select>
+                        </div>
+                        <div id="transportation-section" class="form-group" style="margin-top:15px;margin-bottom:0;">
+                            <h4 style="margin-bottom:10px;color:var(--accent);"><i class='bx bx-map-pin' style="margin-right:5px;"></i>Travel to SLIIT Malabe</h4>
+                            <p style="color:var(--text-muted);font-size:0.87rem;margin:0 0 12px;">This information is collected only for campus-access and parking planning. The map is provided to help local and international participants plan their journey.</p>
+                            <div class="form-group row" style="margin-bottom:12px;">
+                                <div class="input-field col">
+                                    <label for="transportMode">Transportation <span class="required">*</span></label>
+                                    <select id="transportMode" name="Transport_Mode" required>
+                                        <option value="" disabled selected>Select transportation</option>
+                                        <option value="Private Vehicle - Parking Required">Private vehicle — on-campus parking required</option>
+                                        <option value="Private Vehicle - No Parking">Private vehicle — no on-campus parking required</option>
+                                        <option value="Ride-hailing / Taxi">Ride-hailing / taxi (PickMe, Uber, etc.)</option>
+                                        <option value="Public Transport">Public transport (bus / train)</option>
+                                        <option value="Other / Arranged Transport">Other / arranged transport</option>
+                                    </select>
+                                </div>
+                                <div id="vehicle-number-group" class="input-field col hidden">
+                                    <label for="vehicleNumber">Vehicle Registration Number <span class="required">*</span></label>
+                                    <input type="text" id="vehicleNumber" name="Vehicle_Number" maxlength="30"
+                                        placeholder="E.g. CAB-1234" autocomplete="off">
+                                    <small>Required for campus security pre-clearance.</small>
+                                </div>
+                            </div>
+                            <div style="overflow:hidden;border:1px solid rgba(255,255,255,0.12);border-radius:10px;">
+                                <iframe title="SLIIT Malabe Campus location" src="https://www.google.com/maps?q=SLIIT+Malabe+Campus&output=embed"
+                                    width="100%" height="250" style="display:block;border:0;" loading="lazy"
+                                    referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>
+                            </div>
+                            <a class="btn" href="https://www.google.com/maps/dir/?api=1&destination=SLIIT+Malabe+Campus" target="_blank" rel="noopener"
+                                style="margin-top:10px;display:inline-flex;"><i class='bx bx-navigation'></i> Open Directions in Google Maps</a>
+                        </div>
+                    </div>
+
+                    <!-- Inauguration Ceremony opt-in — shown for student-type categories only -->
+                    <div id="inauguration-section" class="form-group highlight-box hidden" style="margin-top:-10px;margin-bottom:25px;background:rgba(74,104,255,0.07);border:1px solid rgba(74,104,255,0.25);">
+                        <p style="margin:0 0 10px;color:var(--text-muted);font-size:0.9rem;"><i class='bx bx-calendar-event' style="color:var(--accent);margin-right:6px;"></i>Student registrations do not include the Inauguration Ceremony by default. You may opt in for an additional fee.</p>
+                        <div class="form-checkbox">
+                            <input type="checkbox" id="includeInauguration" name="Include_Inauguration" class="price-trigger">
+                            <label for="includeInauguration">I would like to attend the Inauguration Ceremony <span id="inauguration-fee-label" style="color:var(--accent);font-size:0.88em;"></span></label>
+                        </div>
+                    </div>
+
+                    <!-- 2. Action Phase -->
+                    <div class="form-group highlight-box" style="margin-bottom: 25px;">
+                        <h4 style="margin-bottom: 15px; color: var(--accent);">What are you registering for? <span
+                                class="required">*</span></h4>
+                        <div class="form-checkbox mb-2">
+                            <input type="checkbox" id="toggleMain" name="Registering_Main"
+                                class="section-toggle price-trigger" value="Main Conference">
+                            <label for="toggleMain" style="font-weight: 600;">I am attending the Main Conference</label>
+                        </div>
+                        <div class="form-checkbox mb-2">
+                            <input type="checkbox" id="toggleAward" name="Registering_Award"
+                                class="section-toggle price-trigger" value="Excellence Award">
+                            <label for="toggleAward" style="font-weight: 600;">I am applying for the Excellence
+                                Award</label>
+                        </div>
+                        <div class="form-checkbox mb-2">
+                            <input type="checkbox" id="toggleExcursion" name="Registering_Excursion"
+                                class="section-toggle price-trigger" value="Excursion">
+                            <label for="toggleExcursion" style="font-weight: 600;">I am joining the Excursion</label>
+                        </div>
+                        <div class="form-checkbox">
+                            <input type="checkbox" id="togglePreConf" name="Registering_PreConf"
+                                class="section-toggle price-trigger" value="Pre-Conference Workshops">
+                            <label for="togglePreConf" style="font-weight: 600;">I am registering for Pre-Conference Workshops</label>
+                        </div>
+                        <div class="form-checkbox" id="conference-workshops-toggle-row">
+                            <input type="checkbox" id="toggleConferenceWorkshops" name="Registering_Conference_Workshops" class="section-toggle" value="Conference Workshops">
+                            <label for="toggleConferenceWorkshops" style="font-weight:600;">I plan to attend Technical Workshops during the Conference</label>
+                        </div>
+                        <div id="reg-type-cost-preview"></div>
+                    </div>
+
+                    <!-- Dynamic paper blocks will be injected inside section-main -->
+
+                    <!-- Dynamic Sections -->
+                    <!-- 1. Main Conference -->
+                    <div id="section-main" class="dynamic-section hidden">
+                        <h3 class="section-title">Main Conference Details</h3>
+                        <div class="form-group">
+                            <label for="nameCertificate">Name to Appear on Certificate (BLOCK LETTERS)</label>
+                            <input type="text" id="nameCertificate" name="Certificate_Name" placeholder="JOHN DOE">
+                        </div>
+                        <div id="designation-group" class="form-group row">
+                            <div class="input-field col">
+                                <label for="designation">Designation / Post</label>
+                                <input type="text" id="designation" name="Designation"
+                                    placeholder="E.g. Senior Lecturer">
+                            </div>
+                            <div class="input-field col">
+                                <!-- Removed duplicate attendeeCategory field - kept the one below with proper attributes -->
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="address">Postal / Mailing Address</label>
+                            <textarea id="address" name="Address" rows="2"
+                                placeholder="Street, City, Country, Postal Code"></textarea>
+                        </div>
+                        <div class="form-group" id="cmt-changes-group">
+                            <label for="cmtChanges">Changes from CMT Information</label>
+                            <textarea id="cmtChanges" name="CMT_Changes" rows="3"
+                                placeholder="E.g. presenting author changed from A. Silva to B. Perera. Leave blank if there are no changes."></textarea>
+                            <small class="helper-text">Mention presenting-author changes or any other difference from the information submitted in CMT.</small>
+                        </div>
+                        <div class="form-group row">
+                            <div class="input-field col">
+                                <label for="foodPreference">Dietary Preference <span class="required">*</span></label>
+                                <select id="foodPreference" name="Food_Preference" required>
+                                    <option value="" disabled selected>Select Dietary Preference</option>
+                                    <option value="Vegetarian">Vegetarian</option>
+                                    <option value="Non-Vegetarian">Non-Vegetarian</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Papers section - hidden for Non-Authors -->
+                        <div id="papers-section">
+                            <div class="form-group">
+                                <label for="numberOfPapers">Number of Papers <span class="required">*</span></label>
+                                <input type="number" id="numberOfPapers" name="Number_of_Papers" min="1" max="10"
+                                    value="1" placeholder="1" class="price-trigger" required>
+                                <small class="helper-text discount-hint hidden">Multi-paper discount applies from the 2nd paper — see fee breakdown below.</small>
+                            </div>
+                        </div>
+
+                        <!-- Student ID Upload - inside section-main -->
+                        <div class="form-group upload-group hidden" id="studentIdSection">
+                            <label for="studentId">Upload Student ID <span
+                                    class="required student-required hidden">*</span></label>
+                            <input type="file" id="studentId" name="Student_ID_File" accept="image/*,.pdf">
+                            <small class="helper-text">Maximum file size: 5MB (JPEG, PNG, PDF)</small>
+                        </div>
+
+                    </div>
+
+                    <div id="apc-journal-preview"></div>
+
+                    <!-- Dynamic Papers Container - hidden for Non-Authors -->
+                    <div id="dynamic-papers-container" class="mt-4">
+                        <!-- JS will populate Paper 1, 2, 3 here -->
+                    </div>
+
+                    <!-- Shared Pre-Conference Workshops block — shown when Main Conference OR Pre-Conference toggle is checked -->
+                    <div id="section-preconf-sessions" class="dynamic-section hidden">
+                        <h3 class="section-title">Pre-Conference Workshops</h3>
+                        <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:16px;">Select the workshops you wish to attend before the main conference. These can be booked standalone or together with the Main Conference registration.</p>
+                        <div id="preconf-cost-preview"></div>
+                        <div id="preconf-sessions-section" class="hidden">
+                            <div id="preconf-sessions-container"></div>
+                        </div>
+
+                        <!-- Workshop Discount Tier — shown when Pre-Conference Workshops toggle is active -->
+                        <div id="workshop-discount-section" class="hidden" style="margin-top:20px;padding:16px 20px;background:rgba(74,222,128,0.04);border:1px solid rgba(74,222,128,0.2);border-radius:var(--card-radius);">
+                            <h4 style="margin:0 0 6px;color:var(--text-light);font-size:0.92rem;display:flex;align-items:center;gap:8px;">
+                                <i class='bx bx-badge-check' style="color:#4ade80;font-size:1.1rem;"></i>Workshop Discount Tier
+                            </h4>
+                            <p style="color:var(--text-muted);font-size:0.84rem;margin:0 0 14px;">Academics and students are eligible for a reduced workshop fee. Select your tier below — you may need to upload a valid ID to verify eligibility.</p>
+                            <div class="form-group row">
+                                <div class="input-field col">
+                                    <label for="workshopDiscountTier">Discount Tier</label>
+                                    <select id="workshopDiscountTier" name="Workshop_Discount_Tier" class="price-trigger">
+                                        <option value="regular">Regular (Standard Rate)</option>
+                                        <option value="academic">Academic (Reduced Rate)</option>
+                                        <option value="student">Student (Reduced Rate)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="workshop-id-upload-section" class="form-group upload-group hidden">
+                                <label for="workshopId">Upload Valid Academic / Student ID <span class="required">*</span></label>
+                                <input type="file" id="workshopId" name="Workshop_ID_File" accept="image/*,.pdf">
+                                <small class="helper-text">Required to verify your discount eligibility. Max 5MB (JPEG, PNG, PDF). <em>Note: students who already uploaded a Student ID for the Main Conference do not need to re-upload here.</em></small>
+                                <div id="workshop-id-status"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="section-conference-workshops" class="dynamic-section hidden">
+                        <h3 class="section-title">Technical Workshops During the Conference</h3>
+                        <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:16px;">Select the research-focused workshops you plan to attend. You can update this registration later.</p>
+                        <div id="conference-workshops-container"></div>
+                    </div>
+
+                    <!-- 3. Excellence Award -->
+                    <div id="section-award" class="dynamic-section hidden">
+                        <h3 class="section-title">Excellence Award Registration</h3>
+                        <div class="form-group row">
+                            <div class="input-field col">
+                                <label for="companyName">Company Name</label>
+                                <input type="text" id="companyName" name="Company_Name"
+                                    placeholder="Enter company name">
+                            </div>
+                            <div class="input-field col">
+                                <label for="participantCount">Number of Participants</label>
+                                <input type="number" id="participantCount" name="Participant_Count" min="1" value="1"
+                                    placeholder="1" class="price-trigger">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="participantNames">Full Names of All Participants</label>
+                            <textarea id="participantNames" name="Participant_Names" rows="2"
+                                placeholder="List all participants separated by commas"></textarea>
+                        </div>
+                        <div class="form-group row">
+                            <div class="input-field col">
+                                <label for="awardCategory">Category Applied For</label>
+                                <select id="awardCategory" name="Award_Category">
+                                    <option value="" disabled selected>Select Category</option>
+                                </select>
+                            </div>
+                            <div class="input-field col">
+                                <label for="primaryReason">Primary Purpose of Attendance</label>
+                                <select id="primaryReason" name="Primary_Reason">
+                                    <option value="" disabled selected>Select Purpose</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="primary-reason-other-group" class="form-group hidden" style="margin-top:6px;margin-bottom:0;">
+                            <label for="primaryReasonOther">Please specify your purpose</label>
+                            <input type="text" id="primaryReasonOther" name="Primary_Reason_Other" placeholder="Describe your primary purpose of attendance">
+                        </div>
+                    </div>
+
+                    <!-- 3. Excursion Add-on -->
+                    <div id="section-excursion" class="dynamic-section hidden">
+                        <h3 class="section-title">Excursion Details</h3>
+                        <p>Join us for a cultural and networking excursion to scenic locations in Sri Lanka.</p>
+                        <div class="form-group row mt-3">
+                            <div id="excursion-local-ticket-group" class="input-field col">
+                                <label for="excursionLocalCount">Local Participant Tickets (Sri Lankan Citizens) <span
+                                        class="required">*</span></label>
+                                <input type="number" id="excursionLocalCount" name="Excursion_Local_Count" min="0"
+                                    value="0" placeholder="0" class="price-trigger">
+                            </div>
+                            <div id="excursion-foreign-ticket-group" class="input-field col">
+                                <label for="excursionForeignCount">International Participant Tickets <span
+                                        class="required">*</span></label>
+                                <input type="number" id="excursionForeignCount" name="Excursion_Foreign_Count" min="0"
+                                    value="0" placeholder="0" class="price-trigger">
+                            </div>
+                        </div>
+                        <!-- Excursion specific details -->
+                        <div class="form-group row mt-2">
+                            <div class="input-field col">
+                                <label for="excrMobility">Any strict mobility requirements?</label>
+                                <select id="excrMobility" name="Excursion_Mobility">
+                                </select>
+                            </div>
+                            <div class="input-field col">
+                                <label for="excrShopping">Preferred Activity</label>
+                                <select id="excrShopping" name="Excursion_Activity">
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Fee Calculator & Invoice (shown only when a registration type is selected) -->
+                    <div id="remaining-form" class="hidden">
+
+                        <!-- Dynamic Total Price Calculation Box -->
+                        <div class="price-calculator-box mt-4 hidden" id="price-calculator-box">
+
+                            <!-- Fee Title + Breakdown Grid -->
+                            <div class="price-details">
+                                <h3><i class='bx bx-calculator' style="color:var(--accent);margin-right:6px;"></i>Total
+                                    Registration Fee</h3>
+                                <div class="price-breakdown" id="price-breakdown">
+                                    <span style="color:var(--text-muted);">Select options above to calculate fees</span>
+                                </div>
+                            </div>
+
+                            <!-- Total Amount Row -->
+                            <div class="price-total-row">
+                                <span class="price-label">TOTAL DUE</span>
+                                <div class="price-value">
+                                    <span class="currency">LKR</span>
+                                    <span class="amount" id="totalPriceAmount">0.00</span>
+                                </div>
+                            </div>
+
+                            <!-- Divider -->
+                            <div style="border-top: 1px dashed rgba(255,255,255,0.1);"></div>
+
+                            <!-- Invoice Billing Details -->
+                            <div class="billing-section">
+                                <h4
+                                    style="margin-bottom: 12px; color: var(--accent); font-size: 1rem; font-weight:600;">
+                                    <i class='bx bxs-file-pdf' style="margin-right:6px;"></i>Invoice Billing Details
+                                </h4>
+                                <div class="billing-options" style="margin-bottom: 14px;">
+                                    <div class="billing-radio-item">
+                                        <input type="radio" id="billToPersonal" name="Bill_To" value="Personal" checked
+                                            class="billing-toggle">
+                                        <label for="billToPersonal">Bill to Myself (Personal)</label>
+                                    </div>
+                                    <div class="billing-radio-item">
+                                        <input type="radio" id="billToOrg" name="Bill_To" value="Organization"
+                                            class="billing-toggle">
+                                        <label for="billToOrg">Bill to My Organization / Institution</label>
+                                    </div>
+                                </div>
+
+                                <div id="org-billing-details" class="hidden">
+                                    <div class="form-group row">
+                                        <div class="input-field col">
+                                            <label for="orgLegalName">Organization Legal Name <span
+                                                    class="required">*</span></label>
+                                            <input type="text" id="orgLegalName" name="Billing_Org_Name"
+                                                placeholder="E.g. University of Colombo">
+                                        </div>
+                                        <div class="input-field col">
+                                            <label for="orgTaxId">Tax / VAT No. <span
+                                                    style="color:var(--text-muted);font-weight:400;">(Optional)</span></label>
+                                            <input type="text" id="orgTaxId" name="Billing_Tax_ID"
+                                                placeholder="Tax ID if applicable">
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="orgBillingAddress">Organization Billing Address <span
+                                                class="required">*</span></label>
+                                        <textarea id="orgBillingAddress" name="Billing_Address" rows="2"
+                                            placeholder="Full billing address of the organization"></textarea>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom:0;">
+                                        <label for="orgFinanceEmail">Finance Contact Email <span
+                                                style="color:var(--text-muted);font-weight:400;">(Optional)</span></label>
+                                        <input type="email" id="orgFinanceEmail" name="Billing_Finance_Email"
+                                            placeholder="finance@organization.edu">
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- STEP 1 — Payment & Reference ID -->
+                    <div id="step1-section" class="payment-section mt-4 hidden">
+                        <h3 class="section-title"><strong style="color:var(--accent);">Step 1</strong> — Download Invoice &amp; Make Payment</h3>
+
+                        <div class="highlight-box" style="background:rgba(0,120,200,0.06);border:1px solid rgba(0,150,255,0.25);margin-bottom:18px;padding:14px 18px;">
+                            <h4 style="color:#4a9eff;margin-bottom:10px;font-size:0.93rem;"><i class='bx bx-info-circle' style="margin-right:6px;"></i>Payment Methods &amp; Policies</h4>
+                            <ul style="margin:0;padding-left:1.2rem;color:var(--text-muted);font-size:0.87rem;line-height:2;">
+                                <li><strong style="color:var(--text-light);">Direct Deposit (USD):</strong> Recommended for international participants. Bank transfer to Sampath Bank PLC, Malabe Branch — see bank details on your invoice.</li>
+                                <li><strong style="color:var(--text-light);">Wire Transfer (LKR):</strong> Recommended for participants with Sri Lankan banking access. Use the same Sampath Bank account details.</li>
+                                <li><strong style="color:var(--text-light);">Debit/Credit Card (LKR):</strong> Pay online via the SLIIT Payment Gateway. A 1.5% bank service charge applies. Exchange rate: 1 USD = <span id="notice-exchange-rate">320</span> LKR (indicative).</li>
+                                <li><strong style="color:var(--text-light);">Refund Policy:</strong> All refund requests must be sent to <a href="mailto:sicet@sliit.lk" style="color:#4a9eff;">sicet@sliit.lk</a> by <span id="notice-refund-deadline">August 23, 2026</span>. An administrative fee of US$20 applies to all refunds.</li>
+                            </ul>
+                            <!-- Bank Details Summary -->
+                            <div style="margin-top:12px;padding:10px 14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:8px;font-size:0.84rem;">
+                                <div style="color:var(--text-light);font-weight:600;margin-bottom:6px;"><i class='bx bx-building-house' style="margin-right:5px;color:#4a9eff;"></i>Bank Transfer Details</div>
+                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;color:var(--text-muted);">
+                                    <span><strong style="color:var(--text-light);">Bank:</strong> Sampath Bank PLC</span>
+                                    <span><strong style="color:var(--text-light);">Branch:</strong> Malabe Branch</span>
+                                    <span><strong style="color:var(--text-light);">Account No:</strong> 003910003002</span>
+                                    <span><strong style="color:var(--text-light);">SWIFT / BIC:</strong> BSAMLKLX</span>
+                                    <span style="grid-column:1/-1;"><strong style="color:var(--text-light);">Account Name:</strong> Sri Lanka Institute of Information Technology (Gte) Ltd.</span>
+                                </div>
+                                <div style="margin-top:6px;color:var(--text-muted);font-size:0.8rem;"><i class='bx bx-info-circle' style="color:#4a9eff;margin-right:4px;"></i>Use your <strong style="color:var(--text-light);">Reference ID</strong> as the payment description/reference.</div>
+                            </div>
+                        </div>
+
+                        <div class="highlight-box" style="background:rgba(197,215,58,0.06);border:1px dashed rgba(197,215,58,0.35);margin-bottom:20px;padding:16px 20px;">
+                            <p style="margin:0;color:var(--text-muted);font-size:0.93rem;line-height:2.2;">
+                                <i class='bx bx-list-check' style="color:var(--accent);margin-right:6px;vertical-align:middle;"></i>
+                                <strong style="color:var(--text-light);">How to complete your registration:</strong><br>
+                                &nbsp;&nbsp;<strong style="color:var(--accent);">①</strong> Fill in all details above and click <strong style="color:var(--accent);">"Download Proforma Invoice"</strong> — your Reference ID is generated automatically.<br>
+                                &nbsp;&nbsp;<strong style="color:var(--accent);">②</strong> Make payment using the instructions below. Use your Reference ID as the payment description.<br>
+                                &nbsp;&nbsp;<strong style="color:var(--accent);">③</strong> Upload your receipt in <strong>Step 2</strong> below and click <strong>Submit Registration</strong>.
+                            </p>
+                        </div>
+
+                        <!-- Ref ID display -->
+                        <div id="ref-id-box" style="display:flex;align-items:center;gap:16px;margin-bottom:20px;padding:14px 18px;background:rgba(197,215,58,0.08);border:1px solid rgba(197,215,58,0.3);border-radius:8px;">
+                            <i class='bx bx-id-card' style="font-size:1.6rem;color:var(--accent);flex-shrink:0;"></i>
+                            <div style="flex:1;">
+                                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Your Registration Reference ID</div>
+                                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+                                    <span style="font-size:1.2rem;font-weight:700;color:var(--text-light);letter-spacing:1px;" id="reg-ref-id">—</span>
+                                    <button type="button" id="btn-copy-ref" onclick="copyRefId()" style="display:none;padding:4px 12px;font-size:0.8rem;background:rgba(197,215,58,0.15);border:1px solid rgba(197,215,58,0.5);border-radius:6px;color:var(--accent);cursor:pointer;font-family:inherit;">
+                                        <i class='bx bx-copy-alt'></i> Copy
+                                    </button>
+                                </div>
+                                <div id="ref-id-hint" style="font-size:0.78rem;color:var(--text-muted);">Generated automatically when you download the Proforma Invoice</div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="additionalInfo">Additional Notes or Special Requirements</label>
+                            <textarea id="additionalInfo" name="Additional_Info" rows="2"
+                                placeholder="Any special requirements, accessibility needs, or additional information..."></textarea>
+                        </div>
+
+                        <!-- Invoice Download Button — placed here so user reads all instructions before downloading -->
+                        <div id="invoice-download-wrapper" class="hidden" style="margin-top:6px;">
+                            <button type="button" class="btn" id="btn-download-invoice"
+                                style="width:100%; padding:14px; font-size:1rem; justify-content:center; background:linear-gradient(135deg,rgba(42,107,42,0.25),rgba(197,215,58,0.12)); border:1px solid rgba(197,215,58,0.4); color:var(--accent);">
+                                <i class='bx bxs-file-pdf'></i> Download Proforma Invoice &amp; Get Reference ID
+                            </button>
+                        </div>
+
+                    </div>
+
+                    <!-- STEP 2 — Upload Payment Proof & Submit -->
+                    <div id="step2-section" class="payment-section mt-4 hidden">
+                        <h3 class="section-title"><strong style="color:var(--accent);">Step 2</strong> — Upload Payment &amp; Submit</h3>
+
+                        <div class="highlight-box" style="margin-bottom:20px;">
+                            <h4 style="color:var(--accent);margin-bottom:12px;"><i class='bx bx-credit-card' style="margin-right:6px;"></i>How to Make Your Payment</h4>
+
+                            <!-- Option A: Card via SLIIT Gateway -->
+                            <div style="margin-bottom:14px;">
+                                <div style="color:var(--text-light);font-weight:600;font-size:0.9rem;margin-bottom:6px;"><i class='bx bx-credit-card-front' style="color:var(--accent);margin-right:6px;"></i>Option A — Debit/Credit Card (LKR, 1.5% charge)</div>
+                                <ol style="margin:0;padding-left:1.4rem;color:var(--text-light);line-height:2;font-size:0.9rem;">
+                                    <li>Visit the SLIIT payment portal: <a href="https://pay.sliit.lk/" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600;">https://pay.sliit.lk/</a></li>
+                                    <li>Under <strong style="color:var(--accent);">Purpose of Payment</strong>, select <strong>"Any other payment"</strong>.</li>
+                                    <li>In the <strong style="color:var(--accent);">Description</strong> field, enter your <strong>Reference ID</strong> (shown above).</li>
+                                    <li>Complete the payment and download/screenshot your receipt.</li>
+                                </ol>
+                            </div>
+
+                            <!-- Option B: Bank Transfer -->
+                            <div style="padding-top:12px;border-top:1px solid rgba(255,255,255,0.08);">
+                                <div style="color:var(--text-light);font-weight:600;font-size:0.9rem;margin-bottom:6px;"><i class='bx bx-transfer' style="color:var(--accent);margin-right:6px;"></i>Option B — Bank Transfer (USD / LKR)</div>
+                                <div style="background:rgba(197,215,58,0.05);border:1px solid rgba(197,215,58,0.2);border-radius:8px;padding:10px 14px;margin-bottom:8px;font-size:0.84rem;">
+                                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;color:var(--text-muted);">
+                                        <span><strong style="color:var(--text-light);">Bank:</strong> Sampath Bank PLC</span>
+                                        <span><strong style="color:var(--text-light);">Branch:</strong> Malabe Branch</span>
+                                        <span><strong style="color:var(--text-light);">Account No:</strong> 003910003002</span>
+                                        <span><strong style="color:var(--text-light);">SWIFT / BIC:</strong> BSAMLKLX</span>
+                                        <span style="grid-column:1/-1;"><strong style="color:var(--text-light);">Account Name:</strong> Sri Lanka Institute of Information Technology (Gte) Ltd.</span>
+                                    </div>
+                                </div>
+                                <p style="margin:0;color:var(--text-muted);font-size:0.85rem;line-height:1.7;">Use your <strong style="color:var(--accent);">Reference ID</strong> as the payment description. USD transfers are recommended for international participants; LKR for those with local banking access.</p>
+                            </div>
+
+                            <p style="margin:12px 0 0;color:var(--text-muted);font-size:0.85rem;"><i class='bx bx-upload' style="color:var(--accent);margin-right:4px;"></i>After completing payment, upload your receipt/proof below and click <strong>Submit Registration</strong>.</p>
+                        </div>
+
+                        <div class="form-group row">
+                            <div class="input-field col">
+                                <label for="paymentProof">Upload Proof of Payment <span class="required">*</span></label>
+                                <input type="file" id="paymentProof" name="Payment_Proof" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" class="file-input" multiple>
+                                <small class="helper-text">PDF, JPEG, PNG, or WebP — max 5MB each · up to 3 files. No renaming is required; the system creates a traceable filename using category, registration type, Paper ID(s) when applicable, date, Reference ID, and file number.</small>
+                                <div id="payment-proof-preview" class="proof-preview-list"></div>
+                            </div>
+                            <div class="input-field col">
+                                <label for="transRef">Transaction Reference Number</label>
+                                <input type="text" id="transRef" name="Transaction_Ref" placeholder="Bank receipt reference (optional)">
+                                <small class="helper-text">Enter the transaction number shown by your bank—not your SICET2026 registration Reference ID. Leave blank if the bank did not provide one.</small>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary btn-blocked" id="btn-submit">
+                                <span>Submit Registration</span>
+                                <i class='bx bx-right-arrow-alt'></i>
+                            </button>
+                            <p class="helper-text" style="text-align:center;margin-top:10px;color:var(--text-muted);">
+                                After submission, the SICET team will review your registration and send a confirmation email within 1–2 business days.
+                            </p>
+                            <p id="submit-payment-note" class="helper-text" style="text-align:center;margin-top:10px;color:#e0a000;">
+                                <i class='bx bx-error-circle'></i> Upload your proof of payment above to enable submission.
+                            </p>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <!-- WhatsApp Contact / Query Box -->
+            <div class="form-wrapper glass-panel" style="margin-top:20px;">
+
+                <!-- Header -->
+                <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.07);">
+                    <div style="width:46px;height:46px;background:rgba(37,211,102,0.13);border:1px solid rgba(37,211,102,0.35);border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                        <i class='bx bxl-whatsapp' style="font-size:1.6rem;color:#25d366;"></i>
+                    </div>
+                    <div>
+                        <h3 style="margin:0 0 3px;font-size:1.05rem;color:var(--text-light);font-weight:700;">Have a Query? Contact Us</h3>
+                        <p style="margin:0;font-size:0.82rem;color:var(--text-muted);">Fill in the details below and we will route your message to the right person via WhatsApp.</p>
+                    </div>
+                </div>
+
+                <!-- Reference ID lookup -->
+                <div style="margin-bottom:20px;padding:14px 16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:10px;">
+                    <p style="margin:0 0 4px;font-size:0.8rem;font-weight:600;color:var(--accent);letter-spacing:0.5px;text-transform:uppercase;">Already Registered?</p>
+                    <p style="margin:0 0 12px;font-size:0.82rem;color:var(--text-muted);">Enter your Reference ID to auto-load your details into this form.</p>
+                    <div style="display:flex;gap:8px;align-items:stretch;">
+                        <input type="text" id="wa-ref-lookup" placeholder="Reference ID" style="flex:1;font-size:0.85rem;font-family:monospace;" oninput="onWaRefInput()">
+                        <input type="email" id="wa-ref-email" placeholder="Registration email" style="flex:1;min-width:190px;font-size:0.85rem;">
+                        <button type="button" id="btn-wa-load-ref" onclick="loadWaRegistration()"
+                            style="display:inline-flex;align-items:center;gap:6px;padding:0 16px;background:rgba(197,215,58,0.1);border:1px solid rgba(197,215,58,0.35);border-radius:8px;color:var(--accent);font-weight:600;font-size:0.88rem;font-family:inherit;cursor:pointer;white-space:nowrap;">
+                            <i class='bx bx-search'></i> Load
+                        </button>
+                    </div>
+                    <div id="wa-ref-status" style="display:none;margin-top:10px;font-size:0.83rem;"></div>
+                </div>
+
+                <!-- Step 1: Your details -->
+                <div style="margin-bottom:6px;">
+                    <p style="margin:0 0 10px;font-size:0.8rem;font-weight:600;color:var(--accent);letter-spacing:0.5px;text-transform:uppercase;">Your Contact Details</p>
+                    <div class="form-group row" style="margin-bottom:12px;">
+                        <div class="input-field col">
+                            <label for="wa-name" style="font-size:0.85rem;">Your Name <span class="required">*</span></label>
+                            <input type="text" id="wa-name" placeholder="E.g. John Perera" style="font-size:0.88rem;" oninput="var f=document.getElementById('fullName');if(f)f.value=this.value;renderWaPreview();">
+                        </div>
+                        <div class="input-field col">
+                            <label for="wa-mobile" style="font-size:0.85rem;">Your Mobile Number <span class="required">*</span></label>
+                            <input type="tel" id="wa-mobile" placeholder="+94 77 123 4567" style="font-size:0.88rem;" oninput="var f=document.getElementById('phone');if(f)f.value=this.value;renderWaPreview();">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Auto-detected registration context -->
+                <div id="wa-reg-context" style="display:none;margin-bottom:16px;"></div>
+
+                <!-- Step 2: Issue category -->
+                <div style="margin-bottom:6px;">
+                    <p style="margin:0 0 10px;font-size:0.8rem;font-weight:600;color:var(--accent);letter-spacing:0.5px;text-transform:uppercase;">Issue Details</p>
+                    <div class="form-group" style="margin-bottom:12px;">
+                        <label for="wa-issue-type" style="font-size:0.85rem;">What is your query about? <span class="required">*</span></label>
+                        <select id="wa-issue-type" onchange="updateWhatsAppContact()" style="font-size:0.88rem;">
+                            <option value="" disabled selected>Select issue category…</option>
+                            <option value="preconf">Pre-Conference Workshops</option>
+                            <option value="award">Excellence Award</option>
+                            <option value="payment">Conference Registration &amp; Payment</option>
+                            <option value="technical">Technical Difficulty / Registration System</option>
+                            <option value="general">General Conference Inquiry</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+
+                    <!-- Workshop selector — shown only when Pre-Conference Workshops is selected -->
+                    <div id="wa-workshops-section" style="display:none;margin-bottom:12px;padding:12px 14px;background:rgba(197,215,58,0.05);border:1px solid rgba(197,215,58,0.2);border-radius:10px;">
+                        <p style="margin:0 0 10px;font-size:0.84rem;color:var(--text-light);font-weight:600;"><i class='bx bx-notepad' style="color:var(--accent);margin-right:5px;"></i>Which workshop(s) is your query about?</p>
+                        <div id="wa-workshops-list" style="display:flex;flex-direction:column;gap:8px;">
+                            <!-- Populated by JS from appSettings.pre_conference_sessions -->
+                        </div>
+                    </div>
+
+                    <!-- Award category selector — shown only when Excellence Award is selected -->
+                    <div id="wa-award-section" style="display:none;margin-bottom:12px;padding:12px 14px;background:rgba(197,215,58,0.05);border:1px solid rgba(197,215,58,0.2);border-radius:10px;">
+                        <p style="margin:0 0 10px;font-size:0.84rem;color:var(--text-light);font-weight:600;"><i class='bx bx-award' style="color:var(--accent);margin-right:5px;"></i>Which award category is your query about?</p>
+                        <select id="wa-award-category" onchange="renderWaPreview()" style="font-size:0.88rem;">
+                            <!-- Populated by JS from appSettings.award_categories -->
+                        </select>
+                    </div>
+
+                    <!-- Paper picker — shown only for Registration & Payment and General Conference queries -->
+                    <div id="wa-paper-section" style="display:none;margin-bottom:12px;padding:12px 14px;background:rgba(74,104,255,0.05);border:1px solid rgba(74,104,255,0.2);border-radius:10px;">
+                        <p style="margin:0 0 10px;font-size:0.84rem;color:var(--text-light);font-weight:600;"><i class='bx bx-file-blank' style="color:var(--accent);margin-right:5px;"></i>Is this query about a specific paper?</p>
+                        <select id="wa-paper-select" onchange="renderWaPreview()" style="font-size:0.88rem;">
+                            <option value="">Not specific to a paper</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:14px;">
+                        <label for="wa-issue" style="font-size:0.85rem;">Describe your issue or query <span class="required">*</span></label>
+                        <textarea id="wa-issue" rows="3" placeholder="Type your question or issue here…" style="font-size:0.88rem;resize:vertical;" oninput="renderWaPreview()"></textarea>
+                    </div>
+                </div>
+
+                <!-- Message preview -->
+                <div id="wa-preview" style="display:none;margin-bottom:16px;"></div>
+
+                <!-- Send button -->
+                <div>
+                    <button type="button" id="btn-send-whatsapp" onclick="sendWhatsAppQuery()"
+                        style="display:inline-flex;align-items:center;gap:8px;padding:11px 26px;background:linear-gradient(135deg,rgba(37,211,102,0.25),rgba(37,211,102,0.1));border:1px solid rgba(37,211,102,0.5);border-radius:8px;color:#25d366;font-weight:700;font-size:0.95rem;font-family:inherit;cursor:pointer;">
+                        <i class='bx bxl-whatsapp' style="font-size:1.2rem;"></i> Send via WhatsApp
+                    </button>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Admin Dashboard Section -->
+        <section id="admin-section" class="view-section hidden">
+            <div class="admin-wrapper glass-panel">
+
+                <!-- Header -->
+                <div class="admin-header">
+                    <div class="admin-title">
+                        <h2>Registration Dashboard</h2>
+                        <p id="dash-last-loaded">Data not yet loaded — click <strong>Refresh from Drive</strong>.</p>
+                    </div>
+                    <div class="admin-actions">
+                        <button id="btn-clear" class="btn btn-secondary btn-sm">
+                            <i class='bx bx-refresh'></i> Refresh from Drive
+                        </button>
+                        <button id="btn-export" class="btn btn-success">
+                            <i class='bx bxs-file-export'></i> Export to Excel
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Stats Row -->
+                <div class="stats-row" id="dash-stats-row">
+                    <div class="stat-card"><i class='bx bx-group'></i><div class="stat-info"><h4 id="stat-total">0</h4><span>Total Registrations</span></div></div>
+                    <div class="stat-card"><i class='bx bx-map-pin'></i><div class="stat-info"><h4 id="stat-local">0</h4><span>Local (Sri Lanka)</span></div></div>
+                    <div class="stat-card"><i class='bx bx-globe'></i><div class="stat-info"><h4 id="stat-saarc">0</h4><span>SAARC Region</span></div></div>
+                    <div class="stat-card"><i class='bx bx-globe-alt'></i><div class="stat-info"><h4 id="stat-nonsaarc">0</h4><span>International</span></div></div>
+                    <div class="stat-card"><i class='bx bx-file-blank'></i><div class="stat-info"><h4 id="stat-main">0</h4><span>Main Conference</span></div></div>
+                    <div class="stat-card"><i class='bx bx-award'></i><div class="stat-info"><h4 id="stat-award">0</h4><span>Awards / Excursions</span></div></div>
+                    <div class="stat-card"><i class='bx bx-book-content'></i><div class="stat-info"><h4 id="stat-papers">0</h4><span>Papers Submitted</span></div></div>
+                    <div class="stat-card"><i class='bx bx-bus'></i><div class="stat-info"><h4 id="stat-excursion-pax">0</h4><span>Excursion Pax</span></div></div>
+                    <div class="stat-card"><i class='bx bx-calendar-event'></i><div class="stat-info"><h4 id="stat-workshops">0</h4><span>Workshop Reg.</span></div></div>
+                    <div class="stat-card"><i class='bx bx-car'></i><div class="stat-info"><h4 id="stat-private-vehicles">0</h4><span>Parking Spaces</span></div></div>
+                </div>
+
+                <!-- Dashboard Tabs -->
+                <div class="dash-tabs">
+                    <button class="dash-tab active" data-tab="overview"><i class='bx bx-pie-chart-alt-2'></i> Overview</button>
+                    <button class="dash-tab" data-tab="records"><i class='bx bx-table'></i> All Records</button>
+                    <button class="dash-tab" data-tab="logistics"><i class='bx bx-restaurant'></i> Catering & Logistics</button>
+                </div>
+
+                <!-- Tab: Overview -->
+                <div class="dash-tab-content" id="dash-tab-overview">
+                    <div class="dash-analysis-grid">
+                        <div class="dash-analysis-card">
+                            <h4><i class='bx bx-category'></i> By Attendee Category</h4>
+                            <div id="dash-category-breakdown"></div>
+                        </div>
+                        <div class="dash-analysis-card">
+                            <h4><i class='bx bx-map'></i> By Region / Country</h4>
+                            <div id="dash-region-breakdown"></div>
+                        </div>
+                        <div class="dash-analysis-card">
+                            <h4><i class='bx bx-task'></i> By Registration Type</h4>
+                            <div id="dash-regtype-breakdown"></div>
+                        </div>
+                        <div class="dash-analysis-card">
+                            <h4><i class='bx bx-check-circle'></i> By Status</h4>
+                            <div id="dash-status-breakdown"></div>
+                        </div>
+                    </div>
+                    <div class="dash-analysis-grid" style="margin-top:1rem;">
+                        <div class="dash-analysis-card full-width-card">
+                            <h4><i class='bx bx-calendar-event'></i> Pre-Conference Workshops Attendance</h4>
+                            <div id="dash-sessions-breakdown"></div>
+                        </div>
+                        <div class="dash-analysis-card full-width-card">
+                            <h4><i class='bx bx-presentation'></i> Conference Technical Workshops Interest</h4>
+                            <div id="dash-conference-workshops-breakdown"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab: All Records -->
+                <div class="dash-tab-content hidden" id="dash-tab-records">
+                    <div class="dash-search-bar">
+                        <i class='bx bx-search'></i>
+                        <input type="text" id="dash-search" placeholder="Search by name, email, ref ID, organization, country…">
+                        <select id="dash-filter-cat">
+                            <option value="">All Categories</option>
+                        </select>
+                        <select id="dash-filter-region">
+                            <option value="">All Regions</option>
+                            <option value="Local">Local</option>
+                            <option value="SAARC">SAARC</option>
+                            <option value="Non-SAARC">Non-SAARC</option>
+                        </select>
+                        <select id="dash-filter-status">
+                            <option value="">All Statuses</option>
+                        </select>
+                        <span id="dash-record-count" style="margin-left:auto;color:var(--text-muted);font-size:0.85rem;white-space:nowrap;"></span>
+                    </div>
+                    <div class="table-container" style="margin-top:1rem;">
+                        <table class="data-table" id="submissions-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Date</th>
+                                    <th>Ref ID</th>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Category</th>
+                                    <th>Region</th>
+                                    <th>Country</th>
+                                    <th>Reg. Type</th>
+                                    <th>Papers</th>
+                                    <th>Fee</th>
+                                    <th>Status</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="table-body">
+                                <tr class="empty-row"><td colspan="13">Click <strong>Refresh from Drive</strong> to load registrations.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab: Catering & Logistics -->
+                <div class="dash-tab-content hidden" id="dash-tab-logistics">
+                    <div class="dash-analysis-grid">
+                        <div class="dash-analysis-card">
+                            <h4><i class='bx bx-food-menu'></i> Food / Meal Preferences</h4>
+                            <div id="dash-food-breakdown"></div>
+                        </div>
+                        <div class="dash-analysis-card">
+                            <h4><i class='bx bx-bus'></i> Excursion Details</h4>
+                            <div id="dash-excursion-breakdown"></div>
+                        </div>
+                        <div class="dash-analysis-card">
+                            <h4><i class='bx bx-microphone'></i> Inauguration Opt-ins</h4>
+                            <div id="dash-inauguration-breakdown"></div>
+                        </div>
+                        <div class="dash-analysis-card">
+                            <h4><i class='bx bx-world'></i> Countries Represented</h4>
+                            <div id="dash-countries-breakdown"></div>
+                        </div>
+                        <div class="dash-analysis-card">
+                            <h4><i class='bx bx-car'></i> Transportation / Parking</h4>
+                            <div id="dash-transport-breakdown"></div>
+                        </div>
+                    </div>
+                    <div class="dash-analysis-grid" style="margin-top:1rem;">
+                        <div class="dash-analysis-card full-width-card">
+                            <h4><i class='bx bx-wallet'></i> Revenue Summary</h4>
+                            <div id="dash-revenue-breakdown"></div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Record Detail Modal -->
+        <div id="record-detail-modal" class="record-modal-overlay hidden" role="dialog">
+            <div class="record-modal-box">
+                <div class="record-modal-header">
+                    <h3 id="record-modal-title">Registration Details</h3>
+                    <button id="record-modal-close" class="record-modal-close" aria-label="Close"><i class='bx bx-x'></i></button>
+                </div>
+                <div id="record-modal-body" class="record-modal-body"></div>
+            </div>
+        </div>
+
+        <!-- Admin Settings Section -->
+        <section id="settings-section" class="view-section hidden">
+            <div class="admin-wrapper glass-panel">
+                <div class="admin-header">
+                    <div class="admin-title">
+                        <h2>Pricing Settings</h2>
+                        <p>Configure dynamic registration fees globally.</p>
+                    </div>
+                    <div class="admin-actions">
+                        <button id="btn-save-settings" class="btn btn-success">
+                            <i class='bx bx-save'></i> Save Settings
+                        </button>
+                    </div>
+                </div>
+
+                <form id="settings-form" class="settings-grid">
+
+                    <!-- Excursion & Awards Config -->
+                    <div class="settings-card">
+                        <h3><i class='bx bx-award'></i> Other Registration Fees</h3>
+                        <div class="settings-group">
+                            <h4>Excellence Award (LKR)</h4>
+                            <div class="form-group">
+                                <label>Base Fee (Per Person)</label>
+                                <input type="number" id="fee_award_base" required>
+                            </div>
+                        </div>
+                        <div class="settings-group">
+                            <h4>Excursion</h4>
+                            <div class="form-group row">
+                                <div class="input-field col"><label>Local (LKR)</label><input type="number"
+                                        id="fee_excursion_local" required></div>
+                                <div class="input-field col"><label>Foreigner (USD)</label><input type="number"
+                                        id="fee_excursion_foreigner" required></div>
+                            </div>
+                        </div>
+                        <div class="settings-group">
+                            <h4>Inauguration Ceremony — Student Opt-in</h4>
+                            <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:8px;">Applies only to student-type attendees. Set 0 to disable the option entirely.</p>
+                            <div class="form-group row">
+                                <div class="input-field col">
+                                    <label>Local Fee (LKR) <small style="color:var(--text-muted);">(0 = disabled)</small></label>
+                                    <input type="number" id="fee_inauguration" min="0" placeholder="0">
+                                </div>
+                                <div class="input-field col">
+                                    <label>Non-Local Fee (USD) <small style="color:var(--text-muted);">(0 = disabled)</small></label>
+                                    <input type="number" id="fee_inauguration_usd" min="0" placeholder="0">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Attendee Categories Config -->
+                    <div class="settings-card full-width">
+                        <h3><i class='bx bx-group'></i> Attendee Categories &amp; Fees</h3>
+                        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:12px;">Define registration categories and their fees per region. Check <strong>Student type</strong> to enable student ID upload and inauguration opt-in. Check <strong>Paper discount</strong> to make a category eligible for the multi-paper submission discount below. Check <strong>No papers</strong> for non-presenting attendees. The form dropdown rebuilds automatically when you save.</p>
+                        <div id="categories-list"></div>
+                        <button type="button" id="btn-add-category" class="btn btn-sm btn-primary mt-2">
+                            <i class='bx bx-plus'></i> Add Category
+                        </button>
+                        <div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08);">
+                            <h4 style="margin-bottom:8px;font-size:0.95rem;color:var(--text-light);">Paper Submission Discounts</h4>
+                            <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:12px;">Applies to categories with <strong>Paper discount</strong> checked above. The 1st paper pays full price; extra papers receive the discount up to the cap.</p>
+                            <div class="form-group row">
+                                <div class="input-field col">
+                                    <label>Discount % (2nd paper onwards)</label>
+                                    <input type="number" id="fee_conf_student_discount" min="0" max="100" placeholder="e.g. 10" required>
+                                </div>
+                                <div class="input-field col">
+                                    <label>Max papers eligible for discount <small style="color:var(--text-muted);">(0 = unlimited)</small></label>
+                                    <input type="number" id="fee_discount_max_papers" min="0" placeholder="0">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pre-Conference Workshops Config -->
+                    <div class="settings-card full-width">
+                        <h3><i class='bx bx-notepad'></i> Pre-Conference Workshops</h3>
+                        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:12px;">Add optional workshops that attendees can select. Leave empty to hide from the form.</p>
+                        <div class="settings-group" style="margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.08);">
+                            <h4>Workshop Visibility</h4>
+                            <div class="form-checkbox">
+                                <input type="checkbox" id="setting_preconf_hidden">
+                                <label for="setting_preconf_hidden" style="font-weight:500;">Disable visibility of Pre-Conference Workshops on the registration form</label>
+                            </div>
+                        </div>
+                        <div id="sessions-list"></div>
+                        <button type="button" id="btn-add-session" class="btn btn-sm btn-primary mt-2">
+                            <i class='bx bx-plus'></i> Add Workshop
+                        </button>
+                        <p style="color:var(--text-muted);font-size:0.82rem;margin-top:10px;">Each workshop stays visible through its event date and is hidden automatically afterward.</p>
+                    </div>
+
+                    <div class="settings-card full-width">
+                        <h3><i class='bx bx-presentation'></i> Technical Workshops During Conference Days</h3>
+                        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:12px;">Add these after the programme is arranged. Inactive or expired workshops are hidden from participants.</p>
+                        <div id="conference-workshops-list"></div>
+                        <button type="button" id="btn-add-conference-workshop" class="btn btn-sm btn-primary mt-2"><i class='bx bx-plus'></i> Add Conference Workshop</button>
+                    </div>
+
+                    <!-- APC Journals Config -->
+                    <div class="settings-card full-width">
+                        <h3><i class='bx bx-book'></i> APC Journals & Fees</h3>
+                        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:12px;">For a journal that does not require an Article Processing Charge, check <strong>APC not applicable</strong>. Registrants will see that status clearly and no APC amount will be added to previews or invoices.</p>
+                        <div class="settings-group">
+                            <h4>APC Fee Collection Status</h4>
+                            <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:8px;">Enable only when you are ready to collect APC fees. Paper ID and title remain mandatory for author registrations regardless of this setting. <strong style="color:#e8b84b;">Note:</strong> APC for <em>Advances in Science and Technology</em> is pending confirmation — update the fee before enabling.</p>
+                            <div class="form-checkbox">
+                                <input type="checkbox" id="setting_apc_active">
+                                <label for="setting_apc_active" style="font-weight:500;">Enable APC fee collection and journal selection</label>
+                            </div>
+                        </div>
+                        <div class="journals-list" id="journals-list">
+                            <!-- Dynamic journals -->
+                        </div>
+                        <button type="button" id="btn-add-journal" class="btn btn-sm btn-primary mt-2">
+                            <i class='bx bx-plus'></i> Add New Journal
+                        </button>
+                    </div>
+
+                    <!-- Excellence Award Options -->
+                    <div class="settings-card full-width">
+                        <h3><i class='bx bx-award'></i> Excellence Award Options</h3>
+                        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">Manage dropdown options shown to registrants in the Excellence Award section.</p>
+                        <div class="settings-group">
+                            <h4>Award Categories <small style="color:var(--text-muted);font-weight:400;">(for "Category Applied For")</small></h4>
+                            <div id="award-categories-list" style="margin-bottom:6px;"></div>
+                            <button type="button" class="btn btn-sm btn-primary mt-2" onclick="addSimpleListItem('award-categories-list','award-category-item')">
+                                <i class='bx bx-plus'></i> Add Category
+                            </button>
+                        </div>
+                        <div class="settings-group" style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08);">
+                            <h4>Primary Purpose Options <small style="color:var(--text-muted);font-weight:400;">(for "Primary Purpose of Attendance")</small></h4>
+                            <p style="color:var(--text-muted);font-size:0.82rem;margin-bottom:8px;">If "Other" is included, a free-text field will appear automatically when the registrant selects it.</p>
+                            <div id="award-purposes-list" style="margin-bottom:6px;"></div>
+                            <button type="button" class="btn btn-sm btn-primary mt-2" onclick="addSimpleListItem('award-purposes-list','award-purpose-item')">
+                                <i class='bx bx-plus'></i> Add Purpose
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Excursion Preferences -->
+                    <div class="settings-card full-width">
+                        <h3><i class='bx bx-trip'></i> Excursion Preferences</h3>
+                        <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">Manage dropdown options shown to registrants in the Excursion Details section.</p>
+                        <div class="settings-group">
+                            <h4>Mobility Requirements Options <small style="color:var(--text-muted);font-weight:400;">(for "Any strict mobility requirements?")</small></h4>
+                            <div id="excursion-mobility-list" style="margin-bottom:6px;"></div>
+                            <button type="button" class="btn btn-sm btn-primary mt-2" onclick="addSimpleListItem('excursion-mobility-list','mobility-item')">
+                                <i class='bx bx-plus'></i> Add Option
+                            </button>
+                        </div>
+                        <div class="settings-group" style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.08);">
+                            <h4>Preferred Activity Options <small style="color:var(--text-muted);font-weight:400;">(for "Preferred Activity")</small></h4>
+                            <div id="excursion-activity-list" style="margin-bottom:6px;"></div>
+                            <button type="button" class="btn btn-sm btn-primary mt-2" onclick="addSimpleListItem('excursion-activity-list','activity-item')">
+                                <i class='bx bx-plus'></i> Add Option
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Invoice Settings -->
+                    <div class="settings-card full-width">
+                        <h3><i class='bx bxs-file-pdf'></i> Invoice Settings</h3>
+                        <div class="settings-group">
+                            <h4>Proforma Invoice Signatory</h4>
+                            <div class="form-group">
+                                <label for="setting_chair_name">Registration Chair Name <span
+                                        class="required">*</span></label>
+                                <input type="text" id="setting_chair_name" placeholder="e.g. Kapila Jayaratne"
+                                    style="max-width: 400px;">
+                                <small style="color:var(--text-muted); margin-top:4px; display:block;">
+                                    Enter full name with title (e.g. Prof. Jayaratne, Dr. Perera, Mr. Silva). Appears on
+                                    the invoice signature.
+                                </small>
+                            </div>
+                        </div>
+                        <div class="settings-group">
+                            <h4>Refund Policy Deadline</h4>
+                            <div class="form-group">
+                                <label for="setting_refund_deadline">Refund Request Deadline Date <span
+                                        class="required">*</span></label>
+                                <input type="text" id="setting_refund_deadline" placeholder="e.g. August 23, 2026"
+                                    style="max-width: 300px;">
+                                <small style="color:var(--text-muted); margin-top:4px; display:block;">
+                                    This date appears in the refund policy note on the Proforma Invoice and in the payment notice on the registration form.
+                                </small>
+                            </div>
+                        </div>
+                        <div class="settings-group">
+                            <h4>USD Exchange Rate</h4>
+                            <div class="form-group">
+                                <label for="setting_usd_rate">Indicative Rate: 1 USD = LKR <span class="required">*</span></label>
+                                <input type="number" id="setting_usd_rate" placeholder="e.g. 320" step="0.01" min="1"
+                                    style="max-width: 200px;">
+                                <small style="color:var(--text-muted); margin-top:4px; display:block;">
+                                    Shown on the invoice as an approximate LKR equivalent for USD charges. Update this before going live.
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <!-- Custom JS -->
+    <!-- Add SheetJS Script for Export -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <!-- Add jsPDF Script for Invoice Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="app.js?v=100"></script>
+</body>
+
+</html>

@@ -1,0 +1,4355 @@
+// Default Settings
+const defaultSettings = {
+    conf_fees: {
+        local: { author: 15000, nonauthor: 12000, student: 10000 },
+        saarc: { author: 150, nonauthor: 120, student: 100 },
+        nonsaarc: { author: 250, nonauthor: 200, student: 150 }
+    },
+    discounts: {
+        student_from_2nd: 10,       // percentage discount on 2nd paper onwards
+        discount_max_papers: 3      // max additional papers that receive the discount
+    },
+    award_fee: 10000,
+    excursion_fees: {
+        local: 15000,
+        foreigner: 50       // USD
+    },
+    inauguration_fee: 10000,         // LKR; Student opt-in only (Local)
+    inauguration_fee_usd: 30,       // USD; Student opt-in only (Non-local)
+    journals: [
+        { id: 'j1', name: 'Scopus Q1', fee: 300, apc_not_applicable: false },
+        { id: 'j2', name: 'Scopus Q2', fee: 200, apc_not_applicable: false },
+        { id: 'j3', name: 'Other', fee: 100, apc_not_applicable: false }
+    ],
+    pre_conference_sessions: [
+        { id: 'pcs1', name: 'Quantity Surveying in the era of Digitalisation', fee_local: 10000, fee_saarc: 35, fee_nonsaarc: 50, academic_discount_pct: 0, student_discount_pct: 0 },
+        { id: 'pcs2', name: 'Integrated Design of High-Rise Buildings: From Concept to Construction', fee_local: 12500, fee_saarc: 40, fee_nonsaarc: 60, academic_discount_pct: 50, student_discount_pct: 100 },
+        { id: 'pcs3', name: 'Industry Sector Decarbonization Pathways', fee_local: 5000, fee_saarc: 20, fee_nonsaarc: 30, academic_discount_pct: 0, student_discount_pct: 0 },
+        { id: 'pcs4', name: '6 G wireless Communication (on-line)', fee_local: 1500, fee_saarc: 15, fee_nonsaarc: 25, academic_discount_pct: 0, student_discount_pct: 0 },
+        { id: 'pcs5', name: 'GIS for Civil Engineers', fee_local: 8000, fee_saarc: 30, fee_nonsaarc: 40, academic_discount_pct: 0, student_discount_pct: 0 }
+    ],
+    conference_workshops: [],
+    categories: [
+        { id: 'author',           label: 'Author',                fee_local: 15000, fee_saarc: 150, fee_nonsaarc: 250, is_student: false, no_papers: false, paper_discount: true,  is_workshop_only: false },
+        { id: 'nonauthor',        label: 'Non-Author',            fee_local: 12000, fee_saarc: 120, fee_nonsaarc: 200, is_student: false, no_papers: true,  paper_discount: false, is_workshop_only: false },
+        { id: 'student',          label: 'Student',               fee_local: 10000, fee_saarc: 100, fee_nonsaarc: 150, is_student: true,  no_papers: false, paper_discount: true,  is_workshop_only: false },
+        { id: 'workshopattendee', label: 'Workshop Attendee',     fee_local: 0,     fee_saarc: 0,   fee_nonsaarc: 0,   is_student: false, no_papers: true,  paper_discount: false, is_workshop_only: true  }
+    ],
+    chair_name: 'Dr. Gayashika Fernando',
+    refund_deadline: 'August 23, 2026',
+    usd_to_lkr: 320,
+    apc_collection_active: false,
+    preconf_workshops_hidden: false,
+    award_categories: ['Innovation', 'Sustainability', 'Leadership'],
+    award_purposes: ['Networking', 'To Receive Award', 'Other'],
+    excursion_mobility_options: ['None', 'Wheelchair Access Needed', 'Limited Walking preferred'],
+    excursion_activity_options: ['Sightseeing mostly', 'Shopping & Local Crafts', 'Historical Sites']
+};
+
+// ---- GOOGLE DRIVE CONFIGURATION ----
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwCfXzpVmHaW5PoFD5eVU-sD_xewMvczVoHZAURx2DjVpBxY255rzFxsjf4czJbvpC8/exec';
+const invoiceAuditMode = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    && new URLSearchParams(window.location.search).has('invoiceAudit');
+let adminToken = sessionStorage.getItem('sicet2026_admin_token') || '';
+function readLocalJson(key, fallback = null) {
+    try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback; }
+    catch (_) { localStorage.removeItem(key); return fallback; }
+}
+
+
+// DOM Elements - General
+const registrationForm = document.getElementById('registration-form');
+
+// Sections
+const sections = {
+    'Main Conference':  document.getElementById('section-main'),
+    'Excellence Award': document.getElementById('section-award'),
+    'Excursion':        document.getElementById('section-excursion'),
+    'Conference Workshops': document.getElementById('section-conference-workshops')
+};
+
+// Navigation
+const navFormBtn = document.getElementById('nav-form');
+const navAdminBtn = document.getElementById('nav-admin');
+const navSettingsBtn = document.getElementById('nav-settings');
+const formSection = document.getElementById('form-section');
+const adminSection = document.getElementById('admin-section');
+const settingsSection = document.getElementById('settings-section');
+
+// Admin Elements
+const tableBody   = document.getElementById('table-body');
+const statTotal   = document.getElementById('stat-total');
+const statMain    = document.getElementById('stat-main');
+const statAward   = document.getElementById('stat-award');
+const btnClear    = document.getElementById('btn-clear');
+const btnExport   = document.getElementById('btn-export');
+
+// Dashboard state
+let dashFilteredRows = [];
+
+// Form Price Calculation Elements
+const remainingForm = document.getElementById('remaining-form');
+const priceBox = document.getElementById('price-calculator-box');
+const priceBreakdown = document.getElementById('price-breakdown');
+const priceTotalAmount = document.getElementById('totalPriceAmount');
+const priceCurrency = document.querySelector('.price-value .currency');
+const priceTriggers = document.querySelectorAll('.price-trigger');
+
+// State
+let submissions = []; // Loaded from Google Drive on demand (see loadFromGoogleDrive)
+let adminLoggedIn = false;
+let pendingAdminView = 'settings';
+let appSettings = JSON.parse(JSON.stringify(defaultSettings)); // resolved properly in resolveSettings()
+let formDraft = readLocalJson('sicet2026_draft');
+let paymentProofFiles = []; // Managed array for multi-file proof of payment upload
+let lastDriveSubmissionError = '';
+let paymentProofPreviouslyUploaded = false; // true when loaded record already has proof on server
+let studentIdPreviouslyUploaded = false; // true when loaded record already has student ID on server
+let workshopIdPreviouslyUploaded = false; // true when loaded record already has workshop ID on server
+let isZeroFeeRegistration = false; // true when calculated grand total is 0 (e.g. 100% student discount)
+
+// Initialize
+async function init() {
+    // Resolve settings from Drive (single source of truth) before rendering anything
+    await resolveSettings();
+
+    updateAdminDashboard();
+    populateSettingsForm();
+    populateJournalsDropdown();
+    rebuildCategoryDropdown();
+    rebuildSessionCheckboxes();
+    rebuildConferenceWorkshopCheckboxes();
+    rebuildAwardCategoryDropdown();
+    rebuildAwardPurposeDropdown();
+    rebuildExcursionMobilityDropdown();
+    rebuildExcursionActivityDropdown();
+    generatePaperBlocks(1);
+    setupEventListeners();
+    updateSubmitButtonState();
+    updateExcursionTicketVisibility();
+    updateCostPreviews();
+
+    // Check for draft
+    if (!invoiceAuditMode && formDraft && Object.keys(formDraft).length > 0) {
+        if (confirm("You have an unsaved registration draft. Would you like to restore it?")) {
+            restoreDraft();
+        } else {
+            clearDraft();
+        }
+    }
+}
+
+// Event Listeners
+function setupEventListeners() {
+    // Dynamic Registration Sections from Toggles
+    const toggles = document.querySelectorAll('.section-toggle');
+    toggles.forEach(toggle => {
+        toggle.addEventListener('change', (e) => {
+            const sectionName = e.target.value;
+            if (sections[sectionName]) {
+                if (e.target.checked) {
+                    sections[sectionName].classList.remove('hidden');
+                } else {
+                    sections[sectionName].classList.add('hidden');
+                }
+            }
+            normalizeSectionToggleState(e.target);
+
+            // Pre-conference sessions block: visible when Main or Pre-Conf toggle is on AND sessions are configured
+            const sharedSess = document.getElementById('section-preconf-sessions');
+            if (sharedSess) {
+                const mainOn    = document.getElementById('toggleMain').checked;
+                const preconfOn = document.getElementById('togglePreConf').checked;
+                const hasSessions = (appSettings.pre_conference_sessions || []).some(workshopIsAvailable);
+                if ((mainOn || preconfOn) && hasSessions && !appSettings.preconf_workshops_hidden) sharedSess.classList.remove('hidden');
+                else sharedSess.classList.add('hidden');
+                // Workshop discount section: shown only when a checked workshop actually offers a discount
+                _updateWorkshopDiscountVisibility();
+            }
+
+            // Paper blocks: only visible when Main Conference is selected and category has papers
+            const mainChecked    = document.getElementById('toggleMain').checked;
+            const papersContainer = document.getElementById('dynamic-papers-container');
+            if (papersContainer) {
+                if (!mainChecked) {
+                    papersContainer.classList.add('hidden');
+                } else {
+                    const cat    = document.getElementById('attendeeCategory').value;
+                    const catDef = (appSettings.categories || []).find(c => c.label === cat);
+                    if (!catDef?.no_papers) papersContainer.classList.remove('hidden');
+                }
+            }
+
+            // Check if any section is active to show the remaining form
+            const anyChecked = Array.from(toggles).some(t => t.checked);
+            if (anyChecked) {
+                remainingForm.classList.remove('hidden');
+            } else {
+                remainingForm.classList.add('hidden');
+            }
+            calculateTotalFee();
+        });
+    });
+
+    // Price Trigger fields
+    priceTriggers.forEach(el => {
+        el.addEventListener('change', calculateTotalFee);
+        el.addEventListener('input', calculateTotalFee);
+    });
+
+    // Special trigger for Number of papers hint and block generation
+    document.getElementById('numberOfPapers').addEventListener('input', (e) => {
+        let val = parseInt(e.target.value) || 1;
+        if (val < 1) val = 1;
+        if (val > 10) val = 10;
+        e.target.value = val; // keep DOM in sync with clamped value
+
+        generatePaperBlocks(val);
+
+        const hint = document.querySelector('.discount-hint');
+        const cat = document.getElementById('attendeeCategory').value;
+        const catDef = (appSettings.categories || []).find(c => c.label === cat);
+
+        if (val > 1 && catDef?.paper_discount) {
+            hint.classList.remove('hidden');
+        } else {
+            hint.classList.add('hidden');
+        }
+        calculateTotalFee();
+    });
+
+    // Category-based field visibility — driven by is_student / no_papers flags on the category definition
+    document.getElementById('attendeeCategory').addEventListener('change', (e) => {
+        const category      = e.target.value;
+        const catDef        = (appSettings.categories || []).find(c => c.label === category);
+        const isStudentType = catDef?.is_student || false;
+        const isNoPapers    = catDef?.no_papers   || false;
+
+        const papersSection       = document.getElementById('papers-section');
+        const papersContainer     = document.getElementById('dynamic-papers-container');
+        const numberOfPapersInput = document.getElementById('numberOfPapers');
+        const studentIdField      = document.getElementById('studentId');
+        const studentIdSection    = document.getElementById('studentIdSection');
+        const studentRequired     = document.querySelector('.student-required');
+        const designationGroup    = document.getElementById('designation-group');
+        const cmtChangesGroup     = document.getElementById('cmt-changes-group');
+        const cmtChangesField     = document.getElementById('cmtChanges');
+
+        if (isNoPapers || catDef?.is_workshop_only) {
+            cmtChangesGroup?.classList.add('hidden');
+            if (cmtChangesField) {
+                cmtChangesField.value = '';
+                cmtChangesField.disabled = true;
+            }
+        } else {
+            cmtChangesGroup?.classList.remove('hidden');
+            if (cmtChangesField) cmtChangesField.disabled = false;
+        }
+
+        if (isNoPapers) {
+            // No-papers category (e.g. Non-Author): hide papers and student ID
+            if (papersSection) papersSection.classList.add('hidden');
+            if (papersContainer) papersContainer.classList.add('hidden');
+            if (numberOfPapersInput) { numberOfPapersInput.required = false; numberOfPapersInput.value = 0; }
+            if (studentIdSection) studentIdSection.classList.add('hidden');
+            if (studentIdField) studentIdField.required = false;
+            if (studentRequired) studentRequired.classList.add('hidden');
+            if (designationGroup) designationGroup.classList.remove('hidden');
+            hideInauguration();
+        } else if (isStudentType) {
+            // Student-type: show papers + require student ID + show inauguration opt-in + hide designation
+            if (papersSection) papersSection.classList.remove('hidden');
+            if (papersContainer) papersContainer.classList.remove('hidden');
+            if (numberOfPapersInput) {
+                numberOfPapersInput.required = true;
+                if (!numberOfPapersInput.value || numberOfPapersInput.value === '0') numberOfPapersInput.value = 1;
+            }
+            if (studentIdSection) studentIdSection.classList.remove('hidden');
+            if (studentIdField) studentIdField.required = !studentIdPreviouslyUploaded && !studentIdField.files?.length;
+            if (studentRequired) studentRequired.classList.remove('hidden');
+            if (designationGroup) designationGroup.classList.add('hidden');
+            showInauguration();
+        } else {
+            // Author/default: show papers, hide student ID, show designation
+            if (papersSection) papersSection.classList.remove('hidden');
+            if (papersContainer) papersContainer.classList.remove('hidden');
+            if (numberOfPapersInput) {
+                numberOfPapersInput.required = true;
+                if (!numberOfPapersInput.value || numberOfPapersInput.value === '0') numberOfPapersInput.value = 1;
+            }
+            if (studentIdSection) studentIdSection.classList.add('hidden');
+            if (studentIdField) studentIdField.required = false;
+            if (studentRequired) studentRequired.classList.add('hidden');
+            if (designationGroup) designationGroup.classList.remove('hidden');
+            hideInauguration();
+        }
+
+        const count = parseInt(document.getElementById('numberOfPapers').value) || 0;
+        if (isNoPapers) {
+            document.getElementById('dynamic-papers-container').innerHTML = '';
+        } else {
+            generatePaperBlocks(count || 1);
+        }
+
+        // Update discount hint visibility when category changes
+        const hint = document.querySelector('.discount-hint');
+        if (hint) {
+            if (count > 1 && catDef?.paper_discount) hint.classList.remove('hidden');
+            else hint.classList.add('hidden');
+        }
+
+        calculateTotalFee();
+    });
+
+    // Excursion ticket visibility based on attendee region
+    document.getElementById('attendeeRegion').addEventListener('change', updateExcursionTicketVisibility);
+
+    // "Other" purpose text field visibility
+    document.getElementById('primaryReason')?.addEventListener('change', (e) => {
+        const otherGroup = document.getElementById('primary-reason-other-group');
+        if (otherGroup) {
+            if (e.target.value === 'Other') otherGroup.classList.remove('hidden');
+            else otherGroup.classList.add('hidden');
+        }
+    });
+
+    // File size validation
+    document.getElementById('studentId').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file && file.size > 5 * 1024 * 1024) { // 5MB
+            showToast('File size must not exceed 5MB', 'error');
+            e.target.value = '';
+        } else if (file) {
+            studentIdPreviouslyUploaded = false; // the new upload replaces the saved proof
+        }
+    });
+
+    // Workshop discount tier — show/hide ID upload section and refresh per-session fee labels
+    document.getElementById('workshopDiscountTier')?.addEventListener('change', (e) => {
+        const tier = e.target.value;
+        const uploadSec = document.getElementById('workshop-id-upload-section');
+        if (uploadSec) {
+            if (tier === 'academic' || tier === 'student') uploadSec.classList.remove('hidden');
+            else uploadSec.classList.add('hidden');
+        }
+        calculateTotalFee();
+    });
+
+    // Workshop ID file size validation
+    document.getElementById('workshopId')?.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file && file.size > 5 * 1024 * 1024) {
+            showToast('Workshop ID file must not exceed 5MB', 'error');
+            e.target.value = '';
+        } else if (file) {
+            workshopIdPreviouslyUploaded = false; // new file replaces previous
+        }
+    });
+
+    document.getElementById('paymentProof').addEventListener('change', (e) => {
+        const incoming = Array.from(e.target.files);
+        e.target.value = ''; // reset so same file can be re-selected after removal
+        let acceptedAny = false;
+        for (const file of incoming) {
+            if (file.size > 5 * 1024 * 1024) {
+                showToast(`"${file.name}" exceeds 5MB — skipped.`, 'error');
+                continue;
+            }
+            if (!resolveUploadMime(file)) {
+                showToast(`"${file.name}" is not a supported PDF, JPEG, PNG, or WebP file — skipped.`, 'error');
+                continue;
+            }
+            if (paymentProofFiles.length >= 3) {
+                showToast('Maximum 3 proof files allowed.', 'error');
+                break;
+            }
+            const dup = paymentProofFiles.some(f => f.name === file.name && f.size === file.size);
+            if (!dup) {
+                paymentProofFiles.push(file);
+                acceptedAny = true;
+            }
+        }
+        if (acceptedAny) paymentProofPreviouslyUploaded = false;
+        updatePaymentProofUI();
+    });
+
+    // Auto-populate certificate name from full name
+    document.getElementById('fullName').addEventListener('blur', (e) => {
+        const certNameField = document.getElementById('nameCertificate');
+        if (certNameField && !certNameField.value) {
+            certNameField.value = e.target.value.toUpperCase();
+        }
+    });
+
+    // Phone number validation
+    document.getElementById('phone').addEventListener('blur', (e) => {
+        const phone = e.target.value.trim();
+        // Basic international phone format validation (must start with +)
+        if (phone && !phone.startsWith('+')) {
+            showToast('Phone number must include country code (e.g., +94 77 123 4567)', 'error');
+            e.target.focus();
+        }
+    });
+
+    // Main Registration Optional Excursion (only if element exists)
+    const inclExcMain = document.getElementById('includeExcursionMain');
+    if (inclExcMain) {
+        inclExcMain.addEventListener('change', (e) => {
+            const details = document.getElementById('main-excursion-details');
+            if (e.target.checked) {
+                details.classList.remove('hidden');
+            } else {
+                details.classList.add('hidden');
+            }
+            calculateTotalFee();
+        });
+    }
+
+    // Billing details toggle
+    document.querySelectorAll('.billing-toggle').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            const orgDetails = document.getElementById('org-billing-details');
+            if (e.target.value === 'Organization') {
+                orgDetails.classList.remove('hidden');
+                document.getElementById('orgLegalName').required = true;
+                document.getElementById('orgBillingAddress').required = true;
+            } else {
+                orgDetails.classList.add('hidden');
+                document.getElementById('orgLegalName').required = false;
+                document.getElementById('orgBillingAddress').required = false;
+            }
+        });
+    });
+
+    // Invoice download
+    document.getElementById('btn-download-invoice').addEventListener('click', generateInvoice);
+
+    // Returning registrant — lookup by ref ID
+    document.getElementById('btn-lookup-ref')?.addEventListener('click', handleRefLookup);
+    ['lookup-ref-id', 'lookup-email'].forEach(id => {
+        document.getElementById(id)?.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                handleRefLookup();
+            }
+        });
+    });
+
+    // Form Submission (Step 2)
+    registrationForm.addEventListener('submit', handleFormSubmit);
+
+    // Navigation Toggle
+    navFormBtn.addEventListener('click', () => switchView('form'));
+    navAdminBtn.addEventListener('click', () => {
+        if (adminLoggedIn) {
+            switchView('admin');
+        } else {
+            pendingAdminView = 'admin';
+            document.getElementById('admin-login-modal').classList.remove('hidden');
+            document.getElementById('admin-username').focus();
+        }
+    });
+    navSettingsBtn.addEventListener('click', () => {
+        if (adminLoggedIn) {
+            switchView('settings');
+        } else {
+            pendingAdminView = 'settings';
+            document.getElementById('admin-login-modal').classList.remove('hidden');
+            document.getElementById('admin-username').focus();
+        }
+    });
+
+    // Admin Login Modal
+    document.getElementById('modal-close-btn').addEventListener('click', closeLoginModal);
+    document.getElementById('admin-login-modal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeLoginModal();
+    });
+    document.getElementById('btn-login-submit').addEventListener('click', handleAdminLogin);
+    document.getElementById('admin-password').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleAdminLogin();
+    });
+
+    // Auto-Save: Listen to all form inputs
+    if (!invoiceAuditMode) {
+        registrationForm.addEventListener('input', debounce(saveDraft, 500));
+        registrationForm.addEventListener('change', debounce(saveDraft, 500));
+    }
+
+    // Restore stored refId when email is typed, so returning users reuse their record
+    document.getElementById('email')?.addEventListener('blur', () => {
+        const email = document.getElementById('email').value.trim();
+        if (!email) return;
+        const stored = readLocalJson('sicet2026_ref');
+        if (stored && stored.email === email && stored.refId) {
+            const refEl = document.getElementById('reg-ref-id');
+            if (refEl && (!refEl.textContent || refEl.textContent === '—')) {
+                showRefId(stored.refId);
+            }
+        }
+    });
+
+    // Admin Actions
+    btnClear.addEventListener('click', loadFromGoogleDrive);
+    btnExport.addEventListener('click', exportToExcel);
+
+    // Dashboard tabs
+    document.querySelectorAll('.dash-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.dash-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.dash-tab-content').forEach(c => c.classList.add('hidden'));
+            tab.classList.add('active');
+            document.getElementById('dash-tab-' + tab.dataset.tab).classList.remove('hidden');
+        });
+    });
+
+    // Search & filter
+    ['dash-search', 'dash-filter-cat', 'dash-filter-region', 'dash-filter-status'].forEach(id => {
+        document.getElementById(id)?.addEventListener('input', applyDashFilters);
+        document.getElementById(id)?.addEventListener('change', applyDashFilters);
+    });
+
+    // Record detail modal close
+    document.getElementById('record-modal-close').addEventListener('click', () => {
+        document.getElementById('record-detail-modal').classList.add('hidden');
+    });
+    document.getElementById('record-detail-modal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) document.getElementById('record-detail-modal').classList.add('hidden');
+    });
+
+    // Category change — auto-enable workshops toggle for Workshop Attendee, update papers visibility
+    document.getElementById('attendeeCategory')?.addEventListener('change', () => {
+        const cat = document.getElementById('attendeeCategory').value;
+        const catDef = (appSettings.categories || []).find(c => c.label === cat);
+        if (catDef?.is_workshop_only) {
+            const preconfToggle = document.getElementById('togglePreConf');
+            if (preconfToggle && !preconfToggle.checked) {
+                preconfToggle.checked = true;
+                preconfToggle.dispatchEvent(new Event('change'));
+            }
+        }
+        // Update papers container visibility when category changes
+        const mainChecked = document.getElementById('toggleMain').checked;
+        const papersContainer = document.getElementById('dynamic-papers-container');
+        if (papersContainer && mainChecked) {
+            if (catDef?.no_papers || catDef?.is_workshop_only) {
+                papersContainer.classList.add('hidden');
+            } else {
+                papersContainer.classList.remove('hidden');
+            }
+        }
+    });
+    document.getElementById('transportMode')?.addEventListener('change', updateTransportationVisibility);
+
+    // Settings Actions
+    document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
+    document.getElementById('btn-add-journal').addEventListener('click', addJournalField);
+    document.getElementById('btn-add-category')?.addEventListener('click', addCategoryField);
+    document.getElementById('btn-add-session')?.addEventListener('click', addSessionField);
+    document.getElementById('btn-add-conference-workshop')?.addEventListener('click', addConferenceWorkshopField);
+}
+
+// ---- DYNAMIC UI LOGIC ----
+
+function generatePaperBlocks(count) {
+    const container = document.getElementById('dynamic-papers-container');
+    container.innerHTML = '';
+
+    const apcActive = appSettings.apc_collection_active;
+
+    // Create journal options string
+    let journalOptions = '<option value="" disabled selected>Select Journal</option>';
+    appSettings.journals.forEach(j => {
+        const notApplicable = j.apc_not_applicable === true;
+        journalOptions += `<option value="${j.name}" data-fee="${notApplicable ? 0 : j.fee}" data-apc-not-applicable="${notApplicable}">${j.name}${notApplicable ? ' — APC not applicable' : ' ($' + j.fee + ')'}</option>`;
+    });
+
+    for (let i = 1; i <= count; i++) {
+        const block = document.createElement('div');
+        block.className = 'form-group highlight-box mt-3';
+        block.style.borderRadius = 'var(--card-radius)';
+        block.innerHTML = `
+            <h4 class="mb-3" style="font-size: 1.1rem; color: var(--accent);">Paper ${i} Details</h4>
+            <div class="form-group row">
+                <div class="input-field col">
+                    <label for="paperId_${i}">Paper ID <span class="required">*</span></label>
+                    <input type="text" id="paperId_${i}" name="Paper_${i}_ID" placeholder="E.g. 195" required oninput="calculateTotalFee()">
+                </div>
+                <div class="input-field col">
+                    <label for="paperTitle_${i}">Title of the Paper <span class="required">*</span></label>
+                    <input type="text" id="paperTitle_${i}" name="Paper_${i}_Title" placeholder="Enter paper title" required>
+                </div>
+            </div>
+            <div class="form-checkbox mb-2${apcActive ? '' : ' hidden'}" style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+                <input type="checkbox" id="includeApc_${i}" name="Paper_${i}_Include_APC" class="apc-toggle price-trigger" data-target="apc-details-${i}">
+                <label for="includeApc_${i}" style="margin-left: 8px;">Include APC (Article Processing Charge) for this paper?</label>
+            </div>
+            <div id="apc-details-${i}" class="hidden form-group mt-2">
+                <div class="input-field">
+                    <label for="journal_${i}">Select Journal <span class="required">*</span></label>
+                    <select id="journal_${i}" name="Paper_${i}_Journal" class="journal-select price-trigger">
+                        ${journalOptions}
+                    </select>
+                </div>
+            </div>
+        `;
+        container.appendChild(block);
+    }
+
+    // Add event listeners to the new dynamic elements
+    container.querySelectorAll('.apc-toggle').forEach(toggle => {
+        toggle.addEventListener('change', (e) => {
+            const target = document.getElementById(e.target.dataset.target);
+            const select = target.querySelector('select');
+            if (e.target.checked) {
+                target.classList.remove('hidden');
+                select.required = true;
+            } else {
+                target.classList.add('hidden');
+                select.required = false;
+                select.value = ''; // reset
+            }
+            calculateTotalFee();
+        });
+    });
+
+    container.querySelectorAll('.journal-select').forEach(select => {
+        select.addEventListener('change', calculateTotalFee);
+    });
+}
+
+// ---- DYNAMIC PRICING LOGIC ----
+
+function updateExcursionTicketVisibility() {
+    const region = document.getElementById('attendeeRegion').value;
+    const isLocal = region === 'Local';
+
+    // Excursion ticket groups
+    const localGroup   = document.getElementById('excursion-local-ticket-group');
+    const foreignGroup = document.getElementById('excursion-foreign-ticket-group');
+    if (localGroup && foreignGroup) {
+        // Show the ticket type matching the attendee's region; both can coexist for groups.
+        // Do NOT zero out the counts — the user may have already entered them.
+        if (isLocal) {
+            localGroup.classList.remove('hidden');
+            foreignGroup.classList.add('hidden');
+            const foreignCount = document.getElementById('excursionForeignCount');
+            if (foreignCount) foreignCount.value = 0;
+            const localCount = document.getElementById('excursionLocalCount');
+            if (document.getElementById('toggleExcursion')?.checked && localCount && Number(localCount.value) < 1) {
+                localCount.value = 1;
+            }
+        } else if (region) {
+            foreignGroup.classList.remove('hidden');
+            localGroup.classList.add('hidden');
+            const localCount = document.getElementById('excursionLocalCount');
+            if (localCount) localCount.value = 0;
+            const foreignCount = document.getElementById('excursionForeignCount');
+            if (document.getElementById('toggleExcursion')?.checked && foreignCount && Number(foreignCount.value) < 1) {
+                foreignCount.value = 1;
+            }
+        } else {
+            // No region set yet — show both groups so the user can pick
+            localGroup.classList.remove('hidden');
+            foreignGroup.classList.remove('hidden');
+        }
+    }
+
+    // Country field — hidden for local (Sri Lanka), required for all others
+    const countryGroup = document.getElementById('country-field-group');
+    const countryInput = document.getElementById('country');
+    if (countryGroup && countryInput) {
+        if (isLocal) {
+            countryGroup.classList.add('hidden');
+            countryInput.required = false;
+            countryInput.value = 'Sri Lanka';
+        } else {
+            countryGroup.classList.remove('hidden');
+            countryInput.required = true;
+            if (countryInput.value === 'Sri Lanka') countryInput.value = '';
+        }
+    }
+
+    calculateTotalFee();
+}
+
+function updateTransportationVisibility() {
+    const mode = document.getElementById('transportMode');
+    const vehicleGroup = document.getElementById('vehicle-number-group');
+    const vehicle = document.getElementById('vehicleNumber');
+    if (!mode || !vehicleGroup || !vehicle) return;
+
+    const needsVehicle = mode.value === 'Private Vehicle - Parking Required';
+    vehicleGroup.classList.toggle('hidden', !needsVehicle);
+    vehicle.required = needsVehicle;
+    vehicle.disabled = !needsVehicle;
+    if (!needsVehicle) vehicle.value = '';
+}
+
+function normalizeSectionToggleState(toggle) {
+    if (!toggle) return;
+    if (toggle.id === 'toggleExcursion') {
+        const region = document.getElementById('attendeeRegion')?.value || '';
+        const local = document.getElementById('excursionLocalCount');
+        const foreign = document.getElementById('excursionForeignCount');
+        if (toggle.checked) {
+            if (region === 'Local' && local && Number(local.value) < 1) local.value = 1;
+            if (region && region !== 'Local' && foreign && Number(foreign.value) < 1) foreign.value = 1;
+        } else {
+            if (local) local.value = 0;
+            if (foreign) foreign.value = 0;
+        }
+    }
+
+    if (toggle.id === 'toggleMain' && !toggle.checked) {
+        const numberOfPapers = document.getElementById('numberOfPapers');
+        if (numberOfPapers) {
+            numberOfPapers.value = 0;
+            numberOfPapers.required = false;
+        }
+        const paperContainer = document.getElementById('dynamic-papers-container');
+        if (paperContainer) paperContainer.innerHTML = '';
+        const inauguration = document.getElementById('includeInauguration');
+        if (inauguration) inauguration.checked = false;
+    }
+
+    if (toggle.id === 'toggleAward' && !toggle.checked) {
+        const participantCount = document.getElementById('participantCount');
+        if (participantCount) participantCount.value = 1;
+        ['participantNames', 'awardCategory', 'primaryReason', 'primaryReasonOther', 'companyName'].forEach(id => {
+            const field = document.getElementById(id);
+            if (field) field.value = '';
+        });
+    }
+
+    if (toggle.id === 'togglePreConf' && !toggle.checked) {
+        document.querySelectorAll('.preconf-session-check').forEach(checkbox => { checkbox.checked = false; });
+        const tier = document.getElementById('workshopDiscountTier');
+        if (tier) tier.value = 'regular';
+    }
+}
+
+function validateActiveProductSelections() {
+    const invalid = Array.from(registrationForm.querySelectorAll('[required]')).find(field =>
+        !field.disabled && field.offsetParent !== null && !field.checkValidity());
+    if (invalid) {
+        const label = registrationForm.querySelector(`label[for="${invalid.id}"]`)?.textContent?.replace('*', '').trim() || 'all required fields';
+        showToast(`Please complete ${label}.`, 'error');
+        invalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => invalid.focus({ preventScroll: true }), 350);
+        return false;
+    }
+    if (!Array.from(document.querySelectorAll('.section-toggle')).some(toggle => toggle.checked)) {
+        showToast('Please select at least one registration option.', 'error');
+        return false;
+    }
+    if (document.getElementById('togglePreConf')?.checked &&
+        document.querySelectorAll('.preconf-session-check:checked').length === 0) {
+        showToast('Please select at least one Pre-Conference Workshop.', 'error');
+        document.getElementById('section-preconf-sessions')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return false;
+    }
+    if (document.getElementById('toggleConferenceWorkshops')?.checked && !document.querySelector('.conference-workshop-check:checked')) {
+        showToast('Please select at least one technical workshop during the conference.', 'error');
+        return false;
+    }
+
+    if (document.getElementById('toggleExcursion')?.checked) {
+        const region = document.getElementById('attendeeRegion')?.value || '';
+        const count = region === 'Local'
+            ? Number(document.getElementById('excursionLocalCount')?.value || 0)
+            : Number(document.getElementById('excursionForeignCount')?.value || 0);
+        if (!region || count < 1) {
+            showToast('Excursion registration requires at least one ticket for the attendee’s region.', 'error');
+            document.getElementById('section-excursion')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return false;
+        }
+    }
+    if (document.getElementById('toggleAward')?.checked) {
+        const count = Number(document.getElementById('participantCount')?.value);
+        if (!Number.isInteger(count) || count < 1) {
+            showToast('Excellence Award registration requires at least one participant.', 'error');
+            document.getElementById('participantCount')?.focus();
+            return false;
+        }
+    }
+    return true;
+}
+
+// ---- COST PREVIEW TABLES ----
+
+function updateCostPreviews() {
+    const region   = document.getElementById('attendeeRegion')?.value  || '';
+    const category = document.getElementById('attendeeCategory')?.value || '';
+    const isLocal  = region === 'Local';
+    const isSAARC  = region === 'SAARC';
+    const hasRgn   = !!region;
+    const fxRate   = appSettings.usd_to_lkr || 320;
+    const dispCur  = hasRgn ? (isLocal ? 'LKR' : 'USD') : null;
+
+    const toDisp = (amount, fromCur) => {
+        if (!hasRgn) return null;
+        if (fromCur === dispCur) return amount;
+        return dispCur === 'LKR' ? Math.round(amount * fxRate) : Math.round(amount / fxRate);
+    };
+
+    _previewRegTypes(category, isLocal, isSAARC, hasRgn, fxRate, dispCur, toDisp);
+    _previewApcJournals(hasRgn, dispCur, toDisp);
+    _previewPreconf(isLocal, isSAARC, hasRgn, fxRate, dispCur);
+    updateInaugurationLabel(isLocal, hasRgn);
+    _updateWorkshopDiscountVisibility();
+}
+
+function _previewRegTypes(category, isLocal, isSAARC, hasRgn, fxRate, dispCur, toDisp) {
+    const el = document.getElementById('reg-type-cost-preview');
+    if (!el) return;
+
+    const cats        = appSettings.categories || [];
+    const awdFee      = appSettings.award_fee || 0;                   // LKR native
+    const exclLoc     = appSettings.excursion_fees?.local    || 0;    // LKR native
+    const exclFor     = appSettings.excursion_fees?.foreigner || 0;   // USD native
+    const inaugFeeLKR = appSettings.inauguration_fee     || 0;
+    const inaugFeeUSD = appSettings.inauguration_fee_usd || 0;
+
+    const tbl = 'width:100%;border-collapse:collapse;font-size:0.82rem;';
+    const thS = 'font-size:0.74rem;font-weight:500;color:var(--text-muted);padding:4px 6px 4px 0;';
+    const rb  = 'border-top:1px solid rgba(255,255,255,0.07);';
+
+    const catDef        = category ? cats.find(c => c.label === category) : null;
+    const isStudentType = catDef?.is_student     || false;
+    const hasPaperDisc  = catDef?.paper_discount || false;
+
+    let rows = '';
+
+    if (!hasRgn) {
+        // No region: 4-column table showing all categories
+        cats.forEach(cat => {
+            rows += `<tr style="${rb}">
+                <td style="padding:5px 6px 5px 0;color:var(--text-light);">Main Conf — ${cat.label}</td>
+                <td style="text-align:right;padding:5px 4px;color:var(--accent);">${cat.fee_local.toLocaleString('en-US')}</td>
+                <td style="text-align:right;padding:5px 4px;color:var(--text-light);">${cat.fee_saarc}</td>
+                <td style="text-align:right;padding:5px 4px;color:var(--text-light);">${cat.fee_nonsaarc}</td>
+            </tr>`;
+        });
+        const awUSD  = Math.round(awdFee / fxRate);
+        const elUSD  = Math.round(exclLoc / fxRate);
+        const efLKR  = Math.round(exclFor * fxRate);  // foreigner fee is USD; convert to LKR for local column
+        rows += `<tr style="${rb}">
+            <td style="padding:5px 6px 5px 0;color:var(--text-light);">Excellence Award (per person)</td>
+            <td style="text-align:right;padding:5px 4px;color:var(--accent);">${awdFee.toLocaleString('en-US')}</td>
+            <td style="text-align:right;padding:5px 4px;color:var(--text-light);">${awUSD}</td>
+            <td style="text-align:right;padding:5px 4px;color:var(--text-light);">${awUSD}</td>
+        </tr>
+        <tr style="${rb}">
+            <td style="padding:5px 6px 5px 0;color:var(--text-light);">Excursion — Local Participant Ticket</td>
+            <td style="text-align:right;padding:5px 4px;color:var(--accent);">${exclLoc.toLocaleString('en-US')}</td>
+            <td style="text-align:right;padding:5px 4px;color:var(--text-light);">${elUSD}</td>
+            <td style="text-align:right;padding:5px 4px;color:var(--text-light);">${elUSD}</td>
+        </tr>
+        <tr style="${rb}">
+            <td style="padding:5px 6px 5px 0;color:var(--text-light);">Excursion — International Participant Ticket</td>
+            <td style="text-align:right;padding:5px 4px;color:var(--accent);">${efLKR.toLocaleString('en-US')}</td>
+            <td style="text-align:right;padding:5px 4px;color:var(--text-light);">${exclFor}</td>
+            <td style="text-align:right;padding:5px 4px;color:var(--text-light);">${exclFor}</td>
+        </tr>`;
+
+        el.innerHTML = `<div style="margin-top:12px;padding:12px 16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:8px;">
+            <div style="font-size:0.74rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">
+                <i class='bx bx-receipt' style="margin-right:4px;vertical-align:middle;"></i>Fee Reference — select Attendee Region above for personalised pricing
+            </div>
+            <table style="${tbl}"><thead><tr>
+                <th style="${thS}text-align:left;"></th>
+                <th style="${thS}text-align:right;">Local (LKR)</th>
+                <th style="${thS}text-align:right;">SAARC (USD)</th>
+                <th style="${thS}text-align:right;">Non-SAARC (USD)</th>
+            </tr></thead><tbody>${rows}</tbody></table>
+        </div>`;
+
+    } else {
+        // Region known: single currency. When category is also known, show only that category row.
+        const filteredCats = category ? cats.filter(c => c.label === category) : cats;
+
+        filteredCats.forEach(cat => {
+            const rawFee    = isLocal ? cat.fee_local : (isSAARC ? cat.fee_saarc : cat.fee_nonsaarc);
+            const nativeCur = isLocal ? 'LKR' : 'USD';
+            const dispFee   = toDisp(rawFee, nativeCur);
+            const active    = cat.label === category;
+            const hl = active ? 'background:rgba(197,215,58,0.1);' : '';
+            const nC = active ? 'color:var(--accent);font-weight:600;' : 'color:var(--text-light);';
+            const vC = active ? 'color:var(--accent);font-weight:700;' : 'color:var(--text-light);';
+            rows += `<tr style="${rb}${hl}">
+                <td style="padding:5px 6px 5px 0;${nC}">Main Conf — ${cat.label}${active ? ' ✓' : ''}</td>
+                <td style="text-align:right;padding:5px 6px;${vC}">${dispFee?.toLocaleString('en-US')}</td>
+            </tr>`;
+        });
+
+        // Inauguration row — only shown when a student-type category is selected and fee > 0
+        if (isStudentType && category) {
+            const inaugFee = isLocal ? inaugFeeLKR : inaugFeeUSD;
+            const inaugCur = isLocal ? 'LKR' : 'USD';
+            if (inaugFee > 0) {
+                const dispFee = toDisp(inaugFee, inaugCur);
+                rows += `<tr style="${rb}">
+                    <td style="padding:5px 6px 5px 0;color:var(--text-muted);font-size:0.8rem;padding-left:10px;">↳ Inauguration opt-in (optional)</td>
+                    <td style="text-align:right;padding:5px 6px;color:var(--text-muted);font-size:0.8rem;">+${dispFee?.toLocaleString('en-US')}</td>
+                </tr>`;
+            }
+        }
+
+        // Paper discount sub-row — shown when category qualifies for multi-paper discount
+        if (hasPaperDisc && category) {
+            const discPct  = appSettings.discounts.student_from_2nd || 0;
+            const maxP     = appSettings.discounts.discount_max_papers || 0;
+            const baseFeeP = isLocal ? catDef.fee_local : (isSAARC ? catDef.fee_saarc : catDef.fee_nonsaarc);
+            const nativeCurP = isLocal ? 'LKR' : 'USD';
+            if (discPct > 0) {
+                const discFeeP = Math.round(baseFeeP * (1 - discPct / 100));
+                const capNote  = maxP > 0 ? `, up to ${maxP} papers` : '';
+                rows += `<tr style="${rb}">
+                    <td style="padding:5px 6px 5px 0;color:var(--text-muted);font-size:0.8rem;padding-left:10px;">↳ 2nd paper onwards: ${toDisp(discFeeP, nativeCurP)?.toLocaleString('en-US')} (${discPct}% off${capNote})</td>
+                    <td style="text-align:right;padding:5px 6px;color:var(--text-muted);font-size:0.8rem;">per paper</td>
+                </tr>`;
+            }
+        }
+
+        rows += `<tr style="${rb}">
+            <td style="padding:5px 6px 5px 0;color:var(--text-light);">Excellence Award (per person)</td>
+            <td style="text-align:right;padding:5px 6px;color:var(--text-light);">${toDisp(awdFee, 'LKR')?.toLocaleString('en-US')}</td>
+        </tr>`;
+
+        // Excursion: show the ticket type relevant to the attendee's region
+        if (isLocal) {
+            rows += `<tr style="${rb}">
+                <td style="padding:5px 6px 5px 0;color:var(--text-light);">Excursion — Local Participant Ticket</td>
+                <td style="text-align:right;padding:5px 6px;color:var(--text-light);">${toDisp(exclLoc, 'LKR')?.toLocaleString('en-US')}</td>
+            </tr>`;
+        } else {
+            rows += `<tr style="${rb}">
+                <td style="padding:5px 6px 5px 0;color:var(--text-light);">Excursion — International Participant Ticket</td>
+                <td style="text-align:right;padding:5px 6px;color:var(--text-light);">${toDisp(exclFor, 'USD')?.toLocaleString('en-US')}</td>
+            </tr>`;
+        }
+
+        const hdr = category ? `Fee Reference (${dispCur}) — ${category}` : `Fee Reference (${dispCur})`;
+        el.innerHTML = `<div style="margin-top:12px;padding:12px 16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.1);border-radius:8px;">
+            <div style="font-size:0.74rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">
+                <i class='bx bx-receipt' style="margin-right:4px;vertical-align:middle;"></i>${hdr}
+            </div>
+            <table style="${tbl}"><thead><tr>
+                <th style="${thS}text-align:left;">Registration Type</th>
+                <th style="${thS}text-align:right;">${dispCur}</th>
+            </tr></thead><tbody>${rows}</tbody></table>
+        </div>`;
+    }
+}
+
+function _previewApcJournals(hasRgn, dispCur, toDisp) {
+    const el = document.getElementById('apc-journal-preview');
+    if (!el) return;
+
+    if (!appSettings.apc_collection_active) { el.innerHTML = ''; return; }
+
+    const journals = appSettings.journals || [];
+    if (!journals.length) { el.innerHTML = ''; return; }
+
+    let rows = '';
+    journals.forEach(j => {
+        const notApplicable = j.apc_not_applicable === true;
+        const fee    = notApplicable ? 0 : (hasRgn ? toDisp(j.fee, 'USD') : j.fee);
+        const curLbl = hasRgn ? dispCur : 'USD';
+        rows += `<tr style="border-top:1px solid rgba(74,158,255,0.12);">
+            <td style="padding:6px 8px 6px 0;color:var(--text-light);">${j.name}</td>
+            <td style="text-align:right;padding:6px 0;color:#4a9eff;font-weight:500;">${notApplicable ? 'APC not applicable' : curLbl + ' ' + fee?.toLocaleString('en-US')}</td>
+        </tr>`;
+    });
+
+    el.innerHTML = `<div style="margin-bottom:20px;padding:14px 18px;background:rgba(74,158,255,0.05);border:1px solid rgba(74,158,255,0.2);border-radius:8px;">
+        <div style="font-size:0.78rem;font-weight:600;color:#4a9eff;margin-bottom:10px;">
+            <i class='bx bx-book-open' style="margin-right:5px;"></i>APC Journal Options &amp; Fees${hasRgn ? ' (' + dispCur + ')' : ' (USD)'}
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:0.82rem;"><thead><tr>
+            <th style="text-align:left;font-size:0.74rem;font-weight:500;color:var(--text-muted);padding:3px 8px 3px 0;">Journal</th>
+            <th style="text-align:right;font-size:0.74rem;font-weight:500;color:var(--text-muted);padding:3px 0;">Fee per Paper</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+        <div style="font-size:0.73rem;color:var(--text-muted);margin-top:8px;">APC fee is charged per paper. Select your journal in each paper block below.</div>
+    </div>`;
+}
+
+function _previewPreconf(isLocal, isSAARC, hasRgn, fxRate, dispCur) {
+    const el = document.getElementById('preconf-cost-preview');
+    if (!el) return;
+
+    // Keep the fee summary aligned with the selectable workshop list. Expired
+    // or explicitly inactive workshops remain in settings/history, but must not
+    // be advertised to new registrants.
+    const sessions = (appSettings.pre_conference_sessions || []).filter(workshopIsAvailable);
+    if (!sessions.length) { el.innerHTML = ''; return; }
+
+    const tier    = document.getElementById('workshopDiscountTier')?.value || 'regular';
+
+    let rows = '';
+    sessions.forEach(sess => {
+        const acPct   = sess.academic_discount_pct || 0;
+        const stPct   = sess.student_discount_pct  || 0;
+        const discPct = tier === 'academic' ? acPct : tier === 'student' ? stPct : 0;
+
+        let feeCells;
+        if (hasRgn) {
+            const rawFee    = isLocal ? sess.fee_local : (isSAARC ? sess.fee_saarc : sess.fee_nonsaarc);
+            const nativeCur = isLocal ? 'LKR' : 'USD';
+            const discounted = discPct > 0 ? rawFee * (1 - discPct / 100) : rawFee;
+            const discRaw   = nativeCur === 'LKR' ? Math.round(discounted) : +(discounted.toFixed(2));
+            let dispFee     = discRaw;
+            let dispFeeOrig = rawFee;
+            if (nativeCur !== dispCur) {
+                dispFee     = dispCur === 'LKR' ? Math.round(discRaw * fxRate) : +((discRaw / fxRate).toFixed(2));
+                dispFeeOrig = dispCur === 'LKR' ? Math.round(rawFee  * fxRate) : +((rawFee / fxRate).toFixed(2));
+            }
+            const strike = discPct > 0
+                ? `<span style="text-decoration:line-through;opacity:0.4;font-size:0.78rem;margin-right:4px;">${dispCur} ${dispFeeOrig.toLocaleString('en-US')}</span>` : '';
+            feeCells = `<td style="text-align:right;padding:6px 0;font-weight:500;white-space:nowrap;">${strike}<span style="color:${discPct > 0 ? '#4ade80' : 'var(--accent)'};">${dispCur} ${dispFee.toLocaleString('en-US')}</span></td>`;
+        } else {
+            const rawL = sess.fee_local;
+            const rawS = sess.fee_saarc;
+            const rawN = sess.fee_nonsaarc;
+            const dL   = discPct > 0 ? Math.round(rawL * (1 - discPct / 100)) : rawL;
+            const dS   = discPct > 0 ? +((rawS * (1 - discPct / 100)).toFixed(2)) : rawS;
+            const dN   = discPct > 0 ? +((rawN * (1 - discPct / 100)).toFixed(2)) : rawN;
+            feeCells = `
+                <td style="text-align:right;padding:6px 4px;color:var(--accent);font-weight:500;white-space:nowrap;">${dL.toLocaleString('en-US')}</td>
+                <td style="text-align:right;padding:6px 4px;color:var(--text-light);font-weight:500;white-space:nowrap;">${dS.toLocaleString('en-US')}</td>
+                <td style="text-align:right;padding:6px 4px;color:var(--text-light);font-weight:500;white-space:nowrap;">${dN.toLocaleString('en-US')}</td>`;
+        }
+        const tierBadge = discPct > 0
+            ? `<span style="font-size:0.7rem;background:rgba(74,222,128,0.15);color:#4ade80;border-radius:3px;padding:1px 5px;margin-left:6px;">${discPct}% off</span>` : '';
+        const noDiscNote = (tier !== 'regular' && discPct === 0)
+            ? `<span style="font-size:0.7rem;color:var(--text-muted);margin-left:6px;">(standard rate)</span>` : '';
+
+        rows += `<tr style="border-top:1px solid rgba(197,215,58,0.12);">
+            <td style="padding:6px 8px 6px 0;color:var(--text-light);">${sess.name}${tierBadge}${noDiscNote}</td>
+            ${feeCells}
+        </tr>`;
+    });
+
+    const heading = hasRgn
+        ? `Session Fees (${dispCur})`
+        : 'Fee Reference — select Attendee Region above for personalised pricing';
+    const tableHead = hasRgn
+        ? `<tr><th style="text-align:left;padding:3px 8px 5px 0;color:var(--text-muted);font-weight:500;">Workshop</th><th style="text-align:right;padding:3px 0 5px;color:var(--text-muted);font-weight:500;">${dispCur}</th></tr>`
+        : `<tr><th style="text-align:left;padding:3px 8px 5px 0;color:var(--text-muted);font-weight:500;">Workshop</th><th style="text-align:right;padding:3px 4px 5px;color:var(--text-muted);font-weight:500;">Local (LKR)</th><th style="text-align:right;padding:3px 4px 5px;color:var(--text-muted);font-weight:500;">SAARC (USD)</th><th style="text-align:right;padding:3px 4px 5px;color:var(--text-muted);font-weight:500;">Non-SAARC (USD)</th></tr>`;
+
+    el.innerHTML = `<div style="margin-bottom:16px;padding:12px 16px;background:rgba(197,215,58,0.04);border:1px solid rgba(197,215,58,0.18);border-radius:8px;">
+        <div style="font-size:0.74rem;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">
+            <i class='bx bx-tag-alt' style="margin-right:4px;vertical-align:middle;"></i>${heading}
+        </div>
+        <div style="overflow-x:auto;">
+            <table style="width:100%;min-width:${hasRgn ? '420px' : '620px'};border-collapse:collapse;font-size:0.82rem;">
+                <thead>${tableHead}</thead><tbody>${rows}</tbody>
+            </table>
+        </div>
+    </div>`;
+}
+function updateInaugurationLabel(isLocal, hasRgn) {
+    const span = document.getElementById('inauguration-fee-label');
+    if (!span) return;
+    const inaugFeeLKR = appSettings.inauguration_fee     || 0;
+    const inaugFeeUSD = appSettings.inauguration_fee_usd || 0;
+    if (!hasRgn) {
+        span.textContent = (inaugFeeLKR > 0 || inaugFeeUSD > 0)
+            ? `(additional fee: LKR ${inaugFeeLKR.toLocaleString('en-US')} / USD ${inaugFeeUSD})`
+            : '';
+    } else if (isLocal) {
+        span.textContent = inaugFeeLKR > 0 ? `(additional fee: LKR ${inaugFeeLKR.toLocaleString('en-US')})` : '';
+    } else {
+        span.textContent = inaugFeeUSD > 0 ? `(additional fee: USD ${inaugFeeUSD})` : '';
+    }
+}
+
+// True when at least one checked workshop session offers an academic or student discount
+function _anySelectedWorkshopHasDiscount() {
+    const checked = new Set([...document.querySelectorAll('.preconf-session-check:checked')].map(c => c.dataset.sessId));
+    if (!checked.size) return false;
+    return (appSettings.pre_conference_sessions || [])
+        .filter(s => checked.has(s.id))
+        .some(s => (s.academic_discount_pct || 0) > 0 || (s.student_discount_pct || 0) > 0);
+}
+
+// Show/hide the discount tier block; reset to Regular when hidden
+function _updateWorkshopDiscountVisibility() {
+    const wkDiscSection = document.getElementById('workshop-discount-section');
+    if (!wkDiscSection) return;
+    const show = _anySelectedWorkshopHasDiscount();
+    wkDiscSection.classList.toggle('hidden', !show);
+    if (!show) {
+        const tierSel = document.getElementById('workshopDiscountTier');
+        if (tierSel) tierSel.value = 'regular';
+        document.getElementById('workshop-id-upload-section')?.classList.add('hidden');
+    }
+}
+
+// Update per-session fee labels inline with each checkbox based on current region + discount tier
+function calculateTotalFee() {
+    updateCostPreviews();
+
+    const isMain      = document.getElementById('toggleMain').checked;
+    const isAward     = document.getElementById('toggleAward').checked;
+    const isExcursion = document.getElementById('toggleExcursion').checked;
+    const isPreConf   = document.getElementById('togglePreConf')?.checked || false;
+    const hasPaymentProduct = isMain || isAward || isExcursion || isPreConf;
+
+    const invWrapper = document.getElementById('invoice-download-wrapper');
+    document.getElementById('step1-section')?.classList.toggle('hidden', !hasPaymentProduct);
+    if (!hasPaymentProduct) {
+        priceBox.classList.add('hidden');
+        if (invWrapper) invWrapper.classList.add('hidden');
+        priceCurrency.textContent = 'LKR';
+        priceTotalAmount.textContent = '0.00';
+        priceBreakdown.innerHTML = '';
+        return;
+    }
+    priceBox.classList.remove('hidden');
+    if (invWrapper) invWrapper.classList.remove('hidden');
+
+    const region = document.getElementById('attendeeRegion').value;
+    const isLocalRegion = region === 'Local';
+    // When region is not yet selected treat fees as LKR (the native conference currency)
+    const effectivelyLocal = !region || isLocalRegion;
+    const fxRate = appSettings.usd_to_lkr || 320;
+    const displayCur = effectivelyLocal ? 'LKR' : 'USD';
+
+    // Convert any amount from its native currency to the display currency
+    const toDisplay = (amount, fromCur) => {
+        if (fromCur === displayCur) return amount;
+        return displayCur === 'LKR' ? Math.round(amount * fxRate) : +((amount / fxRate).toFixed(2));
+    };
+
+    let displayTotal = 0;
+    let breakdownText = '';
+    const br = () => {}; // grid layout handles row placement; no <br> needed
+
+    // 1. Main Conference & APC
+    if (isMain) {
+        const category = document.getElementById('attendeeCategory').value;
+        const papers   = parseInt(document.getElementById('numberOfPapers').value) || 1;
+
+        if (!region || !category) {
+            breakdownText += `<span><i class='bx bx-info-circle'></i> Select Region & Category for Conf Fee</span>`;
+        } else {
+            // Resolve base fee from flexible categories list
+            const catDef = (appSettings.categories || []).find(c => c.label === category);
+            const isStudent  = catDef?.is_student || false;
+            let baseFee = 0;
+            let nativeCur = isLocalRegion ? 'LKR' : 'USD';
+            if (catDef) {
+                baseFee = isLocalRegion ? catDef.fee_local : (region === 'SAARC' ? catDef.fee_saarc : catDef.fee_nonsaarc);
+            } else {
+                // Fallback: legacy conf_fees lookup
+                const regionKey = region.toLowerCase().replace(/[^a-z]/g, '');
+                const catKey = isStudent ? 'student' : (catDef?.no_papers ? 'nonauthor' : 'author');
+                baseFee = (appSettings.conf_fees?.[regionKey]?.[catKey]) || 0;
+            }
+            if (catDef?.is_workshop_only) {
+                // Workshop Attendee: no conference base fee — cost is purely per workshop selected
+                br(); breakdownText += `<span>Conference Attendance (Workshop Attendee):</span><span>— fees via workshops</span>`;
+            } else if (catDef?.no_papers) {
+                // Non-presenting categories always pay one flat registration fee,
+                // regardless of stale/imported Number_of_Papers state.
+                const confTotal = baseFee;
+                br(); breakdownText += `<span>Conference Registration (flat, no papers):</span><span>${toDisplay(confTotal, nativeCur).toLocaleString('en-US')} ${displayCur}</span>`;
+                displayTotal += toDisplay(confTotal, nativeCur);
+            } else {
+                const hasPaperDiscount = catDef?.paper_discount || false;
+                const maxP = appSettings.discounts.discount_max_papers || 0;
+                // discPapers: number of papers (2nd onwards) that receive the discount
+                const discPapers = papers > 1 ? (maxP > 0 ? Math.min(papers - 1, maxP) : papers - 1) : 0;
+                const fullExtra  = papers > 1 ? (papers - 1 - discPapers) : 0;
+                const disc       = (appSettings.discounts.student_from_2nd || 0) / 100;
+
+                let confTotal;
+                if (papers === 1) {
+                    confTotal = baseFee;
+                    br(); breakdownText += `<span>Conference Registration:</span><span>${toDisplay(confTotal, nativeCur).toLocaleString('en-US')} ${displayCur}</span>`;
+                } else if (hasPaperDiscount && disc > 0) {
+                    const discFee = baseFee * (1 - disc);
+                    confTotal = baseFee + (discFee * discPapers) + (baseFee * fullExtra);
+                    br(); breakdownText += `<span>Conference Registration (1st paper: ${baseFee} ${nativeCur}; ${discPapers} × ${discFee.toFixed(0)} @ ${appSettings.discounts.student_from_2nd}% off${fullExtra > 0 ? `; ${fullExtra} × ${baseFee} full` : ''}):</span><span>${toDisplay(confTotal, nativeCur).toLocaleString('en-US')} ${displayCur}</span>`;
+                } else {
+                    confTotal = baseFee * papers;
+                    br(); breakdownText += `<span>Conference Registration (${papers} papers × ${baseFee} ${nativeCur}):</span><span>${toDisplay(confTotal, nativeCur).toLocaleString('en-US')} ${displayCur}</span>`;
+                }
+                displayTotal += toDisplay(confTotal, nativeCur);
+            }
+        }
+
+        // APC is available only to paper-holding categories. Guard the calculation
+        // as well as the UI so stale DOM state cannot affect a non-author preview.
+        const pricingCategory = (appSettings.categories || []).find(c => c.label === category);
+        if (pricingCategory && !pricingCategory.no_papers && !pricingCategory.is_workshop_only) {
+            document.getElementById('dynamic-papers-container').querySelectorAll('.apc-toggle').forEach((toggle, i) => {
+                if (toggle.checked) {
+                    const sel = document.getElementById(`journal_${i + 1}`);
+                    if (sel && sel.value) {
+                        const option = sel.options[sel.selectedIndex];
+                        const notApplicable = option.dataset.apcNotApplicable === 'true';
+                        const fee = notApplicable ? 0 : (parseFloat(option.dataset.fee) || 0);
+                        const disp = toDisplay(fee, 'USD');
+                        displayTotal += disp;
+                        br(); breakdownText += `<span>+ P${i + 1} APC (${sel.value}):</span><span>${notApplicable ? 'Not applicable' : disp + ' ' + displayCur}</span>`;
+                    }
+                }
+            });
+        }
+
+    }
+
+    // Inauguration opt-in — only added when Main Conference is also active
+    const inaugCheck = document.getElementById('includeInauguration');
+    if (isMain && inaugCheck?.checked) {
+        const inaugFee = effectivelyLocal ? (appSettings.inauguration_fee || 0) : (appSettings.inauguration_fee_usd || 0);
+        const inaugCur = effectivelyLocal ? 'LKR' : 'USD';
+        if (inaugFee > 0) {
+            const disp = toDisplay(inaugFee, inaugCur);
+            displayTotal += disp;
+            br(); breakdownText += `<span>Inauguration Ceremony:</span><span>${disp.toLocaleString('en-US')} ${displayCur}</span>`;
+        }
+    }
+
+    // Pre-conference sessions — only when Pre-Conference toggle is active
+    if (isPreConf) {
+        const wkTier = document.getElementById('workshopDiscountTier')?.value || 'regular';
+        document.querySelectorAll('.preconf-session-check').forEach(chk => {
+            if (chk.checked) {
+                const sessId = chk.dataset.sessId;
+                const sess = (appSettings.pre_conference_sessions || []).find(s => s.id === sessId);
+                if (sess) {
+                    const rawFee    = effectivelyLocal ? sess.fee_local : (region === 'SAARC' ? sess.fee_saarc : sess.fee_nonsaarc);
+                    const nativeCur2 = effectivelyLocal ? 'LKR' : 'USD';
+                    const discPct   = wkTier === 'academic' ? (sess.academic_discount_pct || 0)
+                                    : wkTier === 'student'  ? (sess.student_discount_pct  || 0) : 0;
+                    const discounted = discPct > 0 ? rawFee * (1 - discPct / 100) : rawFee;
+                    const effFee    = nativeCur2 === 'LKR' ? Math.round(discounted) : +(discounted.toFixed(2));
+                    const disp = toDisplay(effFee, nativeCur2);
+                    displayTotal += disp;
+                    const tierTag = discPct > 0 ? ` [${wkTier}, ${discPct}% off]` : '';
+                    br(); breakdownText += `<span>Workshop — ${sess.name}${tierTag}:</span><span>${disp.toLocaleString('en-US')} ${displayCur}</span>`;
+                }
+            }
+        });
+    }
+
+    // 2. Excellence Award (LKR)
+    if (isAward) {
+        const rawPax = Number(document.getElementById('participantCount').value);
+        const pax = Number.isInteger(rawPax) && rawPax >= 1 ? rawPax : 1;
+        const awardTotal = appSettings.award_fee * pax;
+        const disp = toDisplay(awardTotal, 'LKR');
+        displayTotal += disp;
+        br(); breakdownText += `<span>Excellence Award (${pax} pax):</span><span>${disp.toLocaleString('en-US')} ${displayCur}</span>`;
+    }
+
+    // 3. Excursion (LKR)
+    if (isExcursion) {
+        const locCount = parseInt(document.getElementById('excursionLocalCount').value) || 0;
+        const forCount = parseInt(document.getElementById('excursionForeignCount').value) || 0;
+        // Only count the ticket type that matches the attendee's region so that hidden
+        // residual values from a previous region selection don't sneak into the total.
+        // When no region is selected both fields are visible so both counts apply.
+        const countLocal   = !region || isLocalRegion;
+        const countForeign = !region || !isLocalRegion;
+        if (locCount > 0 && countLocal) {
+            const fee = locCount * appSettings.excursion_fees.local;
+            const disp = toDisplay(fee, 'LKR');
+            displayTotal += disp;
+            br(); breakdownText += `<span>Excursion — Local Tickets (${locCount}):</span><span>${disp.toLocaleString('en-US')} ${displayCur}</span>`;
+        }
+        if (forCount > 0 && countForeign) {
+            const fee = forCount * appSettings.excursion_fees.foreigner;
+            const disp = toDisplay(fee, 'USD');
+            displayTotal += disp;
+            br(); breakdownText += `<span>Excursion — International Tickets (${forCount}):</span><span>${disp.toLocaleString('en-US')} ${displayCur}</span>`;
+        }
+    }
+
+    priceCurrency.textContent = displayCur;
+    priceTotalAmount.textContent = displayTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    priceBreakdown.innerHTML = breakdownText;
+
+    // Update Step 1 UI whenever the total changes so free-registration flows are clear
+    _updateStep1ForFreeReg(displayTotal === 0 && !!displayCur);
+}
+
+
+// ---- FORM SUBMISSION LOGIC (2-STEP) ----
+
+// Shared helper: collect form data object (no files)
+function collectFormData(refId) {
+    const formData = new FormData(registrationForm);
+    const dataObj = {};
+    dataObj['Submission_Date'] = new Date().toLocaleString();
+    dataObj['Invoice_ID'] = refId;
+    for (let [key, value] of formData.entries()) {
+        if (value instanceof File) { dataObj[key] = value.name || ''; continue; }
+        dataObj[key] = dataObj[key] ? `${dataObj[key]}, ${value}` : value;
+    }
+    dataObj['Calculated_Total_Fee'] = document.getElementById('totalPriceAmount').textContent;
+    dataObj['Currency'] = document.querySelector('.price-value .currency').textContent;
+    const typesArr = [];
+    if (document.getElementById('toggleMain').checked)       typesArr.push('Main');
+    if (document.getElementById('toggleAward').checked)      typesArr.push('Award');
+    if (document.getElementById('toggleExcursion').checked)  typesArr.push('Excursion');
+    if (document.getElementById('togglePreConf')?.checked)   typesArr.push('Pre-Conference Workshops');
+    if (document.getElementById('toggleConferenceWorkshops')?.checked) typesArr.push('Conference Workshops');
+    dataObj['Registration_Type'] = typesArr.join(' + ') || 'None';
+    const selectedCategory = document.getElementById('attendeeCategory')?.selectedOptions?.[0];
+    dataObj['Attendee_Category_ID'] = selectedCategory?.dataset?.categoryId || '';
+    dataObj['Record_Schema_Version'] = 5;
+    dataObj['Settings_Version'] = appSettings?._meta?.version || 'legacy-unversioned';
+
+    // Serialize selected pre-conference session names for the admin sheet
+    const selectedSessionNames = [];
+    const selectedSessionIds = [];
+    document.querySelectorAll('.preconf-session-check:checked').forEach(chk => {
+        const sess = (appSettings.pre_conference_sessions || []).find(s => s.id === chk.dataset.sessId);
+        selectedSessionIds.push(chk.dataset.sessId);
+        selectedSessionNames.push(sess?.name || chk.nextElementSibling?.textContent?.replace(/ — saved past selection$/, '') || chk.dataset.sessId);
+    });
+    dataObj['PreConf_Sessions'] = selectedSessionNames.join(', ');
+    dataObj['PreConf_Session_IDs'] = selectedSessionIds.join(', ');
+    dataObj['Workshop_Discount_Tier'] = document.getElementById('workshopDiscountTier')?.value || 'regular';
+    const conferenceItems = [];
+    const conferenceIds = [];
+    document.querySelectorAll('.conference-workshop-check:checked').forEach(chk => {
+        const item = (appSettings.conference_workshops || []).find(workshop => workshop.id === chk.dataset.workshopId);
+        conferenceIds.push(chk.dataset.workshopId);
+        conferenceItems.push(item?.name || chk.nextElementSibling?.textContent?.replace(/ — saved past selection$/, '') || chk.dataset.workshopId);
+    });
+    dataObj['Conference_Workshops'] = conferenceItems.join(', ');
+    dataObj['Conference_Workshop_IDs'] = conferenceIds.join(', ');
+
+    // Normalize conditional fields at the submission boundary. Hidden or
+    // imported stale values must not become operational commitments.
+    if (!document.getElementById('toggleMain')?.checked) {
+        dataObj['Number_of_Papers'] = '0';
+        dataObj['Include_Inauguration'] = '';
+        Object.keys(dataObj).forEach(key => {
+            if (/^Paper_\d+_/.test(key)) delete dataObj[key];
+        });
+    }
+    if (!document.getElementById('toggleAward')?.checked) {
+        dataObj['Company_Name'] = '';
+        dataObj['Participant_Count'] = '0';
+        dataObj['Participant_Names'] = '';
+        dataObj['Award_Category'] = '';
+        dataObj['Primary_Reason'] = '';
+        dataObj['Primary_Reason_Other'] = '';
+    }
+    if (!document.getElementById('toggleExcursion')?.checked) {
+        dataObj['Excursion_Local_Count'] = '0';
+        dataObj['Excursion_Foreign_Count'] = '0';
+        dataObj['Mobility_Requirements'] = '';
+        dataObj['Preferred_Activity'] = '';
+    }
+    if (!document.getElementById('togglePreConf')?.checked) {
+        Object.keys(dataObj).forEach(key => {
+            if (/^PreConf_/.test(key)) delete dataObj[key];
+        });
+        dataObj['PreConf_Sessions'] = '';
+        dataObj['PreConf_Session_IDs'] = '';
+        dataObj['Workshop_Discount_Tier'] = 'regular';
+    }
+    const categoryDef = (appSettings.categories || []).find(category =>
+        category.id === dataObj.Attendee_Category_ID || category.label === dataObj.Attendee_Category);
+    if (categoryDef?.no_papers || categoryDef?.is_workshop_only) {
+        dataObj['Number_of_Papers'] = '0';
+        dataObj['CMT_Changes'] = '';
+        Object.keys(dataObj).forEach(key => {
+            if (/^Paper_\d+_/.test(key)) delete dataObj[key];
+        });
+    }
+    if (!categoryDef?.is_student) {
+        delete dataObj['Include_Inauguration'];
+    }
+    if (dataObj.Attendee_Region === 'Local') {
+        dataObj['Excursion_Foreign_Count'] = '0';
+    } else if (dataObj.Attendee_Region) {
+        dataObj['Excursion_Local_Count'] = '0';
+    }
+    if (studentIdPreviouslyUploaded) dataObj['Student_ID_Base64'] = '(uploaded — see folder)';
+    if (workshopIdPreviouslyUploaded) dataObj['Workshop_ID_Base64'] = '(uploaded — see folder)';
+    if (paymentProofPreviouslyUploaded) dataObj['Payment_Proof_Base64'] = '(uploaded — see folder)';
+
+    return dataObj;
+}
+
+// ---- RETURNING REGISTRANT LOOKUP ----
+
+async function handleRefLookup() {
+    const refId = document.getElementById('lookup-ref-id')?.value?.trim();
+    const lookupEmail = document.getElementById('lookup-email')?.value?.trim();
+    if (!refId || !lookupEmail) { showToast('Please enter your Reference ID and registration email.', 'error'); return; }
+
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+        showToast('Google Drive not configured.', 'error'); return;
+    }
+
+    const btn = document.getElementById('btn-lookup-ref');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bx bx-loader bx-spin"></i> Loading…'; }
+
+    try {
+        const url = APPS_SCRIPT_URL + '?action=getRegistrationByRef&ref=' + encodeURIComponent(refId) + '&email=' + encodeURIComponent(lookupEmail);
+        const res = await fetch(url);
+        const result = await res.json();
+
+        console.log('Ref lookup GAS response:', result);
+
+        // Detect un-redeployed GAS (returns health-check object instead of lookup result)
+        if (result.status === 'SICET 2026 Registration API running') {
+            showToast('Server not updated — please redeploy the Google Apps Script.', 'error');
+            return;
+        }
+
+        if (!result.success || !result.data) {
+            showToast(result.error || 'Reference ID not found. Please check and try again.', 'error');
+            return;
+        }
+
+        populateFormFromData(result.data);
+
+        // Show ref ID
+        showRefId(refId);
+
+        // Reveal Step 2 for any saved registration
+        document.getElementById('step2-section')?.classList.remove('hidden');
+
+        showToast(`Registration loaded for ${result.data.Full_Name || refId}`, 'success');
+        document.getElementById('remaining-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (err) {
+        showToast('Could not connect to server. Please check your connection and try again.', 'error');
+        console.error('Ref lookup error:', err);
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bx bx-search"></i> Load Registration'; }
+    }
+}
+
+function populateFormFromData(data) {
+    // 0. Reset active toggles so stale sections don't linger
+    document.querySelectorAll('.section-toggle').forEach(t => {
+        if (t.checked) { t.checked = false; t.dispatchEvent(new Event('change')); }
+    });
+    document.getElementById('dynamic-papers-container').innerHTML = '';
+
+    // 1. Fire registration-type toggles first so all dependent sections appear
+    const typeKeyMap = {
+        'Main':           'Registering_Main',
+        'Award':          'Registering_Award',
+        'Excursion':      'Registering_Excursion',
+        'Pre-Conference': 'Registering_PreConf',
+        'Conference Workshops': 'Registering_Conference_Workshops'
+    };
+    const regType = data.Registration_Type || '';
+    Object.entries(typeKeyMap).forEach(([key, name]) => {
+        const el = document.querySelector(`[name="${name}"]`);
+        if (el && regType.includes(key)) { el.checked = true; el.dispatchEvent(new Event('change')); }
+    });
+
+    // A historical category may have been retired from current settings. Keep
+    // the saved value visible instead of silently clearing or substituting it.
+    const categorySelect = document.getElementById('attendeeCategory');
+    if (categorySelect && data.Attendee_Category &&
+        ![...categorySelect.options].some(option => option.value === data.Attendee_Category)) {
+        const archivedOption = document.createElement('option');
+        archivedOption.value = data.Attendee_Category;
+        archivedOption.textContent = data.Attendee_Category + ' (saved / no longer offered)';
+        archivedOption.dataset.categoryId = data.Attendee_Category_ID || '';
+        archivedOption.dataset.archived = 'true';
+        categorySelect.appendChild(archivedOption);
+    }
+
+    // 2. Generate paper blocks before populating paper-level fields
+    if (data.Number_of_Papers) {
+        const numPapers = parseInt(data.Number_of_Papers) || 1;
+        const numPapersEl = document.getElementById('numberOfPapers');
+        if (numPapersEl) { numPapersEl.value = numPapers; generatePaperBlocks(numPapers); }
+    }
+
+    const skip = new Set([
+        'Registration_Type', 'Number_of_Papers', 'Calculated_Total_Fee', 'Currency',
+        'Submission_Date', 'Invoice_ID', 'Status', 'Drive_Folder_URL',
+        'Student_ID_Base64', 'Payment_Proof_Base64', 'Workshop_ID_Base64', 'action',
+        'Registering_Main', 'Registering_Award', 'Registering_Excursion', 'Registering_PreConf', 'Registering_Conference_Workshops'
+    ]);
+
+    // 3. Populate every field by type — radio → checkbox → text/select
+    Object.entries(data).forEach(([key, value]) => {
+        if (skip.has(key) || value === '' || value == null) return;
+
+        // Radio buttons (e.g. Bill_To: Personal / Organization)
+        const radios = registrationForm.querySelectorAll(`[name="${key}"][type="radio"]`);
+        if (radios.length > 0) {
+            radios.forEach(r => {
+                if (r.value === String(value)) { r.checked = true; r.dispatchEvent(new Event('change')); }
+            });
+            return;
+        }
+
+        // Checkboxes — APC toggles, pre-conf session checkboxes, etc.
+        const boxes = registrationForm.querySelectorAll(`[name="${key}"][type="checkbox"]`);
+        if (boxes.length > 0) {
+            const checked = (value === true || value === 'true' || value === 'on');
+            boxes.forEach(cb => { cb.checked = checked; if (checked) cb.dispatchEvent(new Event('change')); });
+            return;
+        }
+
+        // Text / select / textarea / number
+        const el = registrationForm.querySelector(`[name="${key}"]`);
+        if (el && el.type !== 'file') el.value = value;
+    });
+
+    // 4. Trigger cascading visibility updates (region hides/shows country + excursion fields,
+    //    category hides/shows designation, student ID, inauguration, paper discount hint)
+    ['attendeeRegion', 'attendeeCategory'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.value) el.dispatchEvent(new Event('change'));
+    });
+
+    // Workshop selections are stored as an ID list in current records and as
+    // a name list in legacy records. Restore either representation after the
+    // Pre-Conference toggle has rebuilt the checkbox controls.
+    const savedSessionIds = new Set(String(data.PreConf_Session_IDs || '')
+        .split(',').map(value => value.trim()).filter(Boolean));
+    const savedSessionNames = new Set(String(data.PreConf_Sessions || '')
+        .split(',').map(value => value.trim()).filter(Boolean));
+    document.querySelectorAll('.preconf-session-check').forEach(checkbox => {
+        const session = (appSettings.pre_conference_sessions || [])
+            .find(item => item.id === checkbox.dataset.sessId);
+        const shouldRestore = savedSessionIds.has(checkbox.dataset.sessId) ||
+            (session && savedSessionNames.has(session.name));
+        if (shouldRestore) checkbox.checked = true;
+    });
+    savedSessionIds.forEach(id => {
+        if (document.querySelector(`.preconf-session-check[data-sess-id="${CSS.escape(id)}"]`)) return;
+        const historical = (appSettings.pre_conference_sessions || []).find(item => item.id === id);
+        const row = document.createElement('div'); row.className = 'form-checkbox mb-2';
+        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = true; checkbox.className = 'preconf-session-check'; checkbox.dataset.sessId = id; checkbox.name = 'PreConf_' + id;
+        const label = document.createElement('label'); label.textContent = (historical?.name || id) + ' — saved past selection';
+        row.append(checkbox, label); document.getElementById('preconf-sessions-container')?.appendChild(row);
+    });
+    const savedConferenceIds = new Set(String(data.Conference_Workshop_IDs || '').split(',').map(value => value.trim()).filter(Boolean));
+    const savedConferenceNames = new Set(String(data.Conference_Workshops || '').split(',').map(value => value.trim()).filter(Boolean));
+    document.querySelectorAll('.conference-workshop-check').forEach(checkbox => {
+        const workshop = (appSettings.conference_workshops || []).find(item => item.id === checkbox.dataset.workshopId);
+        checkbox.checked = savedConferenceIds.has(checkbox.dataset.workshopId) || (workshop && savedConferenceNames.has(workshop.name));
+    });
+    savedConferenceIds.forEach(id => {
+        if (document.querySelector(`.conference-workshop-check[data-workshop-id="${CSS.escape(id)}"]`)) return;
+        const historical = (appSettings.conference_workshops || []).find(item => item.id === id);
+        const row = document.createElement('div'); row.className = 'form-checkbox mb-2';
+        const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = true; checkbox.className = 'conference-workshop-check'; checkbox.dataset.workshopId = id; checkbox.name = 'Conference_Workshop_' + id;
+        const label = document.createElement('label'); label.textContent = (historical?.name || id) + ' — saved past selection';
+        row.append(checkbox, label); document.getElementById('conference-workshops-container')?.appendChild(row);
+    });
+
+    // 5. Re-populate paper fields — MUST run after Step 4 because attendeeCategory's change
+    //    handler calls generatePaperBlocks() which overwrites the container with empty blocks,
+    //    wiping values that were set in Step 3.
+    const nPapersLoad = parseInt(data.Number_of_Papers) || 0;
+    for (let i = 1; i <= nPapersLoad; i++) {
+        const titleEl = document.getElementById(`paperTitle_${i}`);
+        const idEl    = document.getElementById(`paperId_${i}`);
+        const apcEl   = registrationForm.querySelector(`[name="Paper_${i}_Include_APC"]`);
+        const jEl     = document.getElementById(`journal_${i}`);
+        if (titleEl && data[`Paper_${i}_Title`]) titleEl.value = data[`Paper_${i}_Title`];
+        if (idEl    && data[`Paper_${i}_ID`])    idEl.value    = data[`Paper_${i}_ID`];
+        if (apcEl && (data[`Paper_${i}_Include_APC`] === true || data[`Paper_${i}_Include_APC`] === 'true' || data[`Paper_${i}_Include_APC`] === 'on')) {
+            if (!apcEl.checked) { apcEl.checked = true; apcEl.dispatchEvent(new Event('change')); }
+        }
+        if (jEl && data[`Paper_${i}_Journal`]) jEl.value = data[`Paper_${i}_Journal`];
+    }
+
+    // 6. Restore "Other" purpose text field visibility
+    const prSel = document.getElementById('primaryReason');
+    if (prSel && prSel.value === 'Other') {
+        document.getElementById('primary-reason-other-group')?.classList.remove('hidden');
+    }
+
+    calculateTotalFee();
+
+    // Sync loaded name/phone into the WhatsApp widget fields
+    const _waName = document.getElementById('wa-name');
+    const _waMob  = document.getElementById('wa-mobile');
+    if (_waName && data.Full_Name) _waName.value = data.Full_Name;
+    if (_waMob  && data.Phone)     _waMob.value  = data.Phone;
+
+    // Show "previously uploaded" badge next to file inputs when files are on record
+    if (data.Student_ID_Base64 === '(uploaded — see folder)') {
+        studentIdPreviouslyUploaded = true;
+        const studentIdInput = document.getElementById('studentId');
+        if (studentIdInput) studentIdInput.required = false;
+        showUploadedStatus('studentId', 'Student ID previously uploaded');
+    }
+    if (data.Payment_Proof_Base64 === '(uploaded — see folder)') {
+        paymentProofFiles = [];
+        paymentProofPreviouslyUploaded = true;
+        updatePaymentProofUI();
+    }
+    // Restore workshop discount tier
+    if (data.Workshop_Discount_Tier && data.Workshop_Discount_Tier !== 'regular') {
+        const wkSel = document.getElementById('workshopDiscountTier');
+        if (wkSel) {
+            wkSel.value = data.Workshop_Discount_Tier;
+            document.getElementById('workshop-id-upload-section')?.classList.remove('hidden');
+        }
+    }
+    if (data.Workshop_ID_Base64 === '(uploaded — see folder)') {
+        workshopIdPreviouslyUploaded = true;
+        showUploadedStatus('workshopId', 'Workshop ID previously uploaded');
+    }
+
+    // Make loaded registration data available to the WhatsApp widget paper picker.
+    // Without this, gatherWaContext() falls back to reading DOM fields which may not yet
+    // be visible (paper section hidden) at the time the user selects an issue type.
+    waLoadedData = data;
+    waDataSource = 'form';
+
+    // Refresh WhatsApp context box and preview so it reflects the loaded registration data
+    refreshWaContextBox();
+    renderWaPreview();
+}
+
+// STEP 1 — Save draft + get Ref ID (no payment proof required)
+// STEP 2 — Upload payment proof and finalize
+async function handleFormSubmit(e) {
+    e.preventDefault();
+    const submitBtn = document.getElementById('btn-submit');
+
+    if (!validateActiveProductSelections()) return;
+
+    if (!isZeroFeeRegistration && paymentProofFiles.length === 0 && !paymentProofPreviouslyUploaded) {
+        showToast('Please upload your proof of payment before submitting.', 'error');
+        document.getElementById('paymentProof').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
+
+    let refId = document.getElementById('reg-ref-id')?.textContent?.trim();
+    if (!refId || refId === '—') {
+        showToast('Please complete Step 1 first to get a Reference ID.', 'error'); return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>Preparing files…</span><i class="bx bx-loader bx-spin"></i>';
+
+    const dataObj = collectFormData(refId);
+    dataObj['Status'] = 'Submitted';
+
+    const studentIdInput = document.getElementById('studentId');
+    const workshopTier = document.getElementById('workshopDiscountTier')?.value || 'regular';
+    const isPreConfActive = document.getElementById('togglePreConf')?.checked || false;
+    const workshopIdInput = document.getElementById('workshopId');
+    try {
+        if (studentIdInput?.files[0]) {
+            dataObj['Student_ID_Base64'] = await fileToBase64(studentIdInput.files[0]);
+        } else if (studentIdPreviouslyUploaded) {
+            dataObj['Student_ID_Base64'] = '(uploaded — see folder)';
+        }
+
+        // Workshop discount ID validation
+        if (isPreConfActive && (workshopTier === 'academic' || workshopTier === 'student')) {
+            // Student tier: existing conference Student ID counts as proof — no re-upload needed
+            const studentIdAlreadyHave = !!studentIdInput?.files[0] || studentIdPreviouslyUploaded;
+            const workshopIdHave = !!workshopIdInput?.files[0] || workshopIdPreviouslyUploaded;
+            if (workshopTier === 'student' && studentIdAlreadyHave) {
+                // reuse conference student ID — no extra upload required
+            } else if (!workshopIdHave) {
+                showToast(workshopTier === 'academic'
+                    ? 'Please upload your Academic ID to claim the academic discount.'
+                    : 'Please upload your Student ID to claim the student discount.', 'error');
+                workshopIdInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<span>Submit Registration</span><i class="bx bx-right-arrow-alt"></i>';
+                return;
+            }
+        }
+        if (workshopIdInput?.files[0]) {
+            dataObj['Workshop_ID_Base64'] = await fileToBase64(workshopIdInput.files[0]);
+        } else if (workshopIdPreviouslyUploaded) {
+            dataObj['Workshop_ID_Base64'] = '(uploaded — see folder)';
+        }
+
+        dataObj['Payment_Proof_Base64'] = paymentProofFiles.length
+            ? await Promise.all(paymentProofFiles.map(f => fileToBase64(f)))
+            : (paymentProofPreviouslyUploaded ? '(uploaded — see folder)' : []);
+    } catch (err) {
+        console.error('File preparation error:', err);
+        showToast(err.message || 'The selected file could not be read. Please choose it again and retry.', 'error');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<span>Submit Registration</span><i class="bx bx-right-arrow-alt"></i>';
+        return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span>Submitting…</span><i class="bx bx-loader bx-spin"></i>';
+
+    const ok = await submitToGoogleDrive(dataObj);
+
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = '<span>Submit Registration</span><i class="bx bx-right-arrow-alt"></i>';
+    if (!ok) return;
+
+    // Keep email→refId in localStorage so any re-submission from this browser updates the same record
+    const submittedEmail = dataObj.Email || '';
+    if (submittedEmail) localStorage.setItem('sicet2026_ref', JSON.stringify({ email: submittedEmail, refId }));
+
+    clearDraft();
+    registrationForm.reset();
+    paymentProofFiles = [];
+    paymentProofPreviouslyUploaded = false;
+    studentIdPreviouslyUploaded = false;
+    updatePaymentProofUI();
+    workshopIdPreviouslyUploaded = false;
+    isZeroFeeRegistration = false;
+    document.getElementById('step2-free-notice')?.remove();
+    document.getElementById('step1-free-notice')?.remove();
+    const _payBox = document.getElementById('step2-section')?.querySelector('.highlight-box');
+    if (_payBox) _payBox.style.display = '';
+    const _proofRow = document.getElementById('paymentProof')?.closest('.form-group.row');
+    if (_proofRow) _proofRow.style.display = '';
+    const _wkTierEl = document.getElementById('workshopDiscountTier');
+    if (_wkTierEl) _wkTierEl.value = 'regular';
+    document.getElementById('workshop-id-upload-section')?.classList.add('hidden');
+    document.querySelectorAll('.section-toggle').forEach(t => t.dispatchEvent(new Event('change')));
+    const refEl = document.getElementById('reg-ref-id');
+    if (refEl) refEl.textContent = '—';
+    document.getElementById('step2-section')?.classList.add('hidden');
+    waLoadedData = null;
+    waDataSource = null;
+    refreshWaContextBox();
+
+    showToast(`Registration received! Reference: ${refId}. A confirmation email will be sent within 1–2 business days.`, 'success');
+}
+
+// ---- PROFORMA INVOICE (jsPDF) LOGIC ----
+
+async function generateInvoice() {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    // ---- 1. Collect Form Data ----
+    const title = document.getElementById('title').value || '';
+    const fullName = document.getElementById('fullName').value || '';
+    const email = document.getElementById('email').value || '';
+    const phone = document.getElementById('phone').value || '';
+    const org = document.getElementById('organization').value || '';
+    const region = document.getElementById('attendeeRegion').value || '';
+    const country = document.getElementById('country').value || '';
+    const category = document.getElementById('attendeeCategory').value || '';
+
+    // Invoice generation is a button action, so native form submission validation does
+    // not run automatically. Validate the shared identity/billing inputs explicitly.
+    const invoiceRequiredIds = ['title', 'fullName', 'email', 'phone', 'organization', 'attendeeRegion', 'country', 'attendeeCategory'];
+    const firstInvalid = invoiceRequiredIds
+        .map(id => document.getElementById(id))
+        .find(el => !el || !String(el.value || '').trim() || (el.checkValidity && !el.checkValidity()));
+    if (firstInvalid) {
+        showToast('Please complete all attendee profile fields before generating the invoice.', 'error');
+        firstInvalid.reportValidity?.();
+        firstInvalid.focus?.();
+        return;
+    }
+
+    const isMain     = document.getElementById('toggleMain').checked;
+    const isAward    = document.getElementById('toggleAward').checked;
+    const isExcursion = document.getElementById('toggleExcursion').checked;
+    const isPreConf  = document.getElementById('togglePreConf')?.checked || false;
+    const isConferenceWorkshops = document.getElementById('toggleConferenceWorkshops')?.checked || false;
+
+    if (!isMain && !isAward && !isExcursion && !isPreConf && !isConferenceWorkshops) {
+        showToast('Please select registration items to generate an invoice.', 'error');
+        return;
+    }
+    if (!validateActiveProductSelections()) return;
+    if (isMain && !region) {
+        showToast('Please select your Attendee Region before generating the invoice.', 'error');
+        document.getElementById('attendeeRegion')?.focus();
+        return;
+    }
+    if (isMain && !category) {
+        showToast('Please select your Attendee Category before generating the invoice.', 'error');
+        document.getElementById('attendeeCategory')?.focus();
+        return;
+    }
+
+    const billToType = document.querySelector('input[name="Bill_To"]:checked')?.value || 'Personal';
+    if (billToType === 'Organization') {
+        const _addr = (document.getElementById('orgBillingAddress')?.value || '').trim();
+        if (!_addr) {
+            showToast('Please enter the Organization Billing Address before downloading the invoice.', 'error');
+            document.getElementById('orgBillingAddress')?.focus();
+            return;
+        }
+    }
+    const orgLegalName = document.getElementById('orgLegalName').value || org;
+    const orgBillingAddress = document.getElementById('orgBillingAddress').value || '';
+    const orgTaxId = document.getElementById('orgTaxId').value || '';
+    const orgFinanceEmail = document.getElementById('orgFinanceEmail').value || '';
+
+    const dateObj = new Date();
+    const dateStr = dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    // Reuse existing ref ID — priority: element already shows one → localStorage for this email → generate new
+    let refId = document.getElementById('reg-ref-id')?.textContent?.trim();
+    if (!refId || refId === '—') {
+        const storedRef = readLocalJson('sicet2026_ref');
+        if (storedRef && storedRef.email === email && storedRef.refId) {
+            refId = storedRef.refId;
+        } else {
+            const randomPart = globalThis.crypto?.randomUUID?.().replace(/-/g, '').slice(0, 8).toUpperCase() || Math.random().toString(36).slice(2, 10).toUpperCase();
+            refId = 'SICET2026-' + Date.now().toString().slice(-7) + randomPart;
+        }
+    }
+    // Always persist the email→refId mapping so re-visits reuse the same record
+    if (email) localStorage.setItem('sicet2026_ref', JSON.stringify({ email, refId }));
+    showRefId(refId);
+    const invoiceNum = refId;
+
+    // ---- 2. Build Line Items (single target currency) ----
+    const isLocalInv = region === 'Local';
+    const invoiceCur = isLocalInv ? 'LKR' : 'USD';
+    const fxRateInv  = appSettings.usd_to_lkr || 320;
+
+    const toIC = (amount, fromCur) => {
+        if (amount === null || amount === undefined) return null;
+        if (fromCur === invoiceCur) return amount;
+        return invoiceCur === 'LKR' ? Math.round(amount * fxRateInv) : +((amount / fxRateInv).toFixed(2));
+    };
+
+    const fmt = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    let lineItems = [];
+    let grandTotal = 0;
+    const addItem = (desc, amount, fromCur) => {
+        const converted = toIC(amount, fromCur);
+        lineItems.push({ description: desc, amount: converted });
+        if (converted !== null) grandTotal += converted;
+    };
+
+    if (isMain) {
+        // || 1: for paper-holding categories there is always at least 1 paper; avoids
+        // the no-papers guard silently dropping the conference fee from the invoice.
+        const papers = parseInt(document.getElementById('numberOfPapers').value) || 1;
+        const nativeCur = isLocalInv ? 'LKR' : 'USD';
+
+        // Resolve base fee from flexible categories
+        const catDef           = (appSettings.categories || []).find(c => c.label === category);
+        const isStudentInv     = catDef?.is_student        || false;
+        const isNoPapersInv    = catDef?.no_papers          || false;
+        const isWorkshopOnlyInv = catDef?.is_workshop_only  || false;
+        let baseFee = 0;
+        if (catDef) {
+            baseFee = isLocalInv ? catDef.fee_local : (region === 'SAARC' ? catDef.fee_saarc : catDef.fee_nonsaarc);
+        } else {
+            const rKey = region.toLowerCase().replace(/[^a-z]/g, '');
+            const cKey = isStudentInv ? 'student' : (isNoPapersInv ? 'nonauthor' : 'author');
+            baseFee = appSettings.conf_fees?.[rKey]?.[cKey] || 0;
+        }
+
+        if (isWorkshopOnlyInv) {
+            // Workshop Attendee: no conference registration line — workshops carry all fees
+        } else if (!isNoPapersInv && papers > 0) {
+            const hasPaperDiscountInv = catDef?.paper_discount || false;
+            const maxP = appSettings.discounts.discount_max_papers || 0;
+            const discPapers = papers > 1 ? (maxP > 0 ? Math.min(papers - 1, maxP) : papers - 1) : 0;
+            const fullExtra  = papers > 1 ? (papers - 1 - discPapers) : 0;
+            const disc       = (appSettings.discounts.student_from_2nd || 0) / 100;
+
+            let confTotal, confLabel;
+            if (papers === 1) {
+                confTotal = baseFee;
+                confLabel = `Conference Registration — ${title} ${fullName} (${category}, ${region})`;
+            } else if (hasPaperDiscountInv && disc > 0) {
+                const discFee = baseFee * (1 - disc);
+                confTotal = baseFee + (discFee * discPapers) + (baseFee * fullExtra);
+                confLabel = `Conference (${papers} papers — 1st: ${baseFee}, ${discPapers} × ${discFee.toFixed(0)} @ ${appSettings.discounts.student_from_2nd}% off${fullExtra > 0 ? `, ${fullExtra} × ${baseFee} full` : ''})`;
+            } else {
+                confTotal = baseFee * papers;
+                confLabel = `Conference Registration — ${papers} Papers × ${baseFee} (${category}, ${region})`;
+            }
+            addItem(confLabel, confTotal, nativeCur);
+
+            // Paper details note
+            const paperNotes = [];
+            for (let i = 1; i <= papers; i++) {
+                const pid = document.getElementById(`paperId_${i}`)?.value || '';
+                const ptitle = document.getElementById(`paperTitle_${i}`)?.value || '';
+                const st = ptitle.length > 32 ? ptitle.slice(0, 32) + '…' : ptitle;
+                if (pid || ptitle) paperNotes.push(`P${i}${pid ? ':' + pid : ''}${st ? ' — ' + st : ''}`);
+
+                const apcToggle = document.getElementById(`includeApc_${i}`);
+                const journalSel = document.getElementById(`journal_${i}`);
+                if (apcToggle?.checked && journalSel?.value) {
+                    const selectedJournal = journalSel.options[journalSel.selectedIndex];
+                    const notApplicable = selectedJournal.dataset.apcNotApplicable === 'true';
+                    const apcFee = notApplicable ? 0 : (parseFloat(selectedJournal.dataset.fee) || 0);
+                    addItem(
+                        `  APC — P${i}: ${journalSel.value}${notApplicable ? ' (not applicable)' : ''}`,
+                        notApplicable ? null : apcFee,
+                        'USD'
+                    );
+                }
+            }
+            if (paperNotes.length > 0) addItem('  Papers: ' + paperNotes.join(' | '), null, nativeCur);
+
+        } else if (isNoPapersInv) {
+            addItem(`Conference Registration — ${title} ${fullName} (${category}, ${region})`, baseFee, nativeCur);
+        }
+
+    }
+
+    // Inauguration opt-in — only when Main Conference is active
+    const inaugCheck = document.getElementById('includeInauguration');
+    if (isMain && inaugCheck?.checked) {
+        const inaugFee = isLocalInv ? (appSettings.inauguration_fee || 0) : (appSettings.inauguration_fee_usd || 0);
+        const inaugCur = isLocalInv ? 'LKR' : 'USD';
+        if (inaugFee > 0) addItem('Inauguration Ceremony (opt-in)', inaugFee, inaugCur);
+    }
+
+    // Pre-conference sessions — only when Pre-Conference toggle is active
+    if (isPreConf) {
+        const invWkTier = document.getElementById('workshopDiscountTier')?.value || 'regular';
+        document.querySelectorAll('.preconf-session-check').forEach(chk => {
+            if (chk.checked) {
+                const sess = (appSettings.pre_conference_sessions || []).find(s => s.id === chk.dataset.sessId);
+                if (sess) {
+                    const rawFee  = isLocalInv ? sess.fee_local : (region === 'SAARC' ? sess.fee_saarc : sess.fee_nonsaarc);
+                    const dPct    = invWkTier === 'academic' ? (sess.academic_discount_pct || 0)
+                                  : invWkTier === 'student'  ? (sess.student_discount_pct  || 0) : 0;
+                    const discounted = dPct > 0 ? rawFee * (1 - dPct / 100) : rawFee;
+                    const effFee  = isLocalInv ? Math.round(discounted) : +(discounted.toFixed(2));
+                    const tierLbl = dPct > 0 ? ` [${invWkTier} rate, ${dPct}% off]` : '';
+                    addItem(`Pre-Conference Workshop — ${sess.name}${tierLbl}`, effFee, isLocalInv ? 'LKR' : 'USD');
+                }
+            }
+        });
+    }
+
+    if (isAward) {
+        const rawPax = Number(document.getElementById('participantCount').value);
+        const pax = Number.isInteger(rawPax) && rawPax >= 1 ? rawPax : 1;
+        const names = document.getElementById('participantNames').value || '';
+        const awardCat = document.getElementById('awardCategory').value || '';
+        addItem(`Excellence Award — ${awardCat || 'Category TBD'} (${pax} pax)`, appSettings.award_fee * pax, 'LKR');
+        if (names) addItem(`  Participants: ${names.slice(0, 80)}${names.length > 80 ? '…' : ''}`, null, 'LKR');
+    }
+
+    if (isExcursion) {
+        const locCount = parseInt(document.getElementById('excursionLocalCount').value) || 0;
+        const forCount = parseInt(document.getElementById('excursionForeignCount').value) || 0;
+        const countLocalInv   = !region || isLocalInv;
+        const countForeignInv = !region || !isLocalInv;
+        if (locCount > 0 && countLocalInv) {
+            const perLocal = toIC(appSettings.excursion_fees.local, 'LKR');
+            addItem(`Excursion — Local Participants × ${locCount} (${invoiceCur} ${fmt(perLocal)} per ticket)`, locCount * appSettings.excursion_fees.local, 'LKR');
+        }
+        if (forCount > 0 && countForeignInv) {
+            const perForeign = toIC(appSettings.excursion_fees.foreigner, 'USD');
+            addItem(`Excursion — International Participants × ${forCount} (${invoiceCur} ${fmt(perForeign)} per ticket)`, forCount * appSettings.excursion_fees.foreigner, 'USD');
+        }
+    }
+
+    if (grandTotal === 0 && lineItems.every(i => i.amount === null)) {
+        showToast('No fees calculated. Please fill in all registration details first.', 'error');
+        return;
+    }
+
+    const isFreeReg = grandTotal === 0;
+    isZeroFeeRegistration = isFreeReg;
+
+    // One final invariant prevents the PDF and displayed quotation from diverging.
+    const displayedCurrency = document.querySelector('.price-value .currency')?.textContent?.trim();
+    const displayedTotal = Number((document.getElementById('totalPriceAmount')?.textContent || '0').replace(/,/g, ''));
+    if (displayedCurrency !== invoiceCur || !Number.isFinite(displayedTotal) || Math.abs(displayedTotal - grandTotal) > 0.009) {
+        showToast('Invoice total changed unexpectedly. Please review the fee breakdown and try again.', 'error');
+        console.error('Invoice total mismatch', { displayedCurrency, displayedTotal, invoiceCur, grandTotal, lineItems });
+        return;
+    }
+
+    // ---- 3. PDF Drawing (B&W, professional — targets 1 A4 page) ----
+    const L = 14;
+    const R = 196;
+    const W = R - L;
+    let Y = 14;
+
+    function drawRow(label, amount, currency, isBold, isShaded) {
+        const splitLabel = doc.splitTextToSize(label, W - 48);
+        const rowH = Math.max((splitLabel.length * 4.5) + 5, 9);
+        if (Y + rowH > 278) { doc.addPage(); Y = 14; }
+        if (isShaded) { doc.setFillColor(248, 248, 248); doc.rect(L, Y, W, rowH, 'F'); }
+        doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.2); doc.rect(L, Y, W, rowH, 'S');
+        doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+        doc.setFontSize(8.5); doc.setTextColor(0, 0, 0);
+        doc.text(splitLabel, L + 3, Y + 5.5);
+        if (amount !== null && amount !== undefined) {
+            doc.text(`${currency} ${fmt(amount)}`, R - 3, Y + 5.5, { align: 'right' });
+        }
+        Y += rowH;
+    }
+
+    // --- HEADER ---
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.setTextColor(0, 0, 0);
+    doc.text('PROFORMA INVOICE', L, Y + 7);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Invoice No:  ${invoiceNum}`, R, Y + 2, { align: 'right' });
+    doc.text(`Date:  ${dateStr}`, R, Y + 8, { align: 'right' });
+
+    Y += 11;
+    doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.5);
+    doc.line(L, Y, R, Y);
+    Y += 6;
+
+    // --- ISSUER (left) & BILL TO (right) — independent column tracking prevents overlap ---
+    const colMid = 106;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(130, 130, 130);
+    doc.text('ISSUED BY', L, Y);
+    doc.text('BILL TO', colMid, Y);
+    Y += 4.5;
+
+    const blockTopY = Y;
+    let issuerY = blockTopY;
+    let billY = blockTopY;
+
+    // Issuer column
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
+    doc.text('SICET Chair — Registration', L, issuerY); issuerY += 4.5;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(50, 50, 50);
+    doc.text('Sri Lanka Institute of Information Technology', L, issuerY); issuerY += 4;
+    doc.text('New Kandy Road, Malabe, Sri Lanka', L, issuerY); issuerY += 4;
+    doc.text('Email: sicet@sliit.lk or info@sliit.lk', L, issuerY); issuerY += 4;
+    doc.text('Tel: 011 754 4801', L, issuerY); issuerY += 4;
+
+    // Bill To column
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
+    if (billToType === 'Organization') {
+        doc.text(orgLegalName || org, colMid, billY); billY += 4.5;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(50, 50, 50);
+        if (orgBillingAddress) {
+            const addrLines = doc.splitTextToSize(orgBillingAddress, R - colMid - 2);
+            doc.text(addrLines, colMid, billY); billY += addrLines.length * 4;
+        }
+        if (orgTaxId) { doc.text(`Tax ID: ${orgTaxId}`, colMid, billY); billY += 4; }
+        if (orgFinanceEmail) { doc.text(orgFinanceEmail, colMid, billY); billY += 4; }
+        doc.text(`Attn: ${title} ${fullName}`, colMid, billY); billY += 4;
+    } else {
+        doc.text(`${title} ${fullName}`, colMid, billY); billY += 4.5;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(50, 50, 50);
+        doc.text(org, colMid, billY); billY += 4;
+        doc.text(email, colMid, billY); billY += 4;
+        doc.text(phone, colMid, billY); billY += 4;
+    }
+
+    Y = Math.max(issuerY, billY) + 3;
+    doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.2);
+    doc.line(L, Y, R, Y);
+    Y += 5;
+
+    // --- TABLE HEADER ---
+    doc.setFillColor(25, 25, 25); doc.setTextColor(255, 255, 255);
+    doc.rect(L, Y, W, 8, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+    doc.text('Description', L + 3, Y + 5.5);
+    doc.text('Amount', R - 3, Y + 5.5, { align: 'right' });
+    Y += 8;
+    doc.setTextColor(0, 0, 0);
+
+    // --- LINE ITEMS (all in invoiceCur) ---
+    doc.setFontSize(8.5); doc.setTextColor(0, 0, 0);
+    lineItems.forEach((item, idx) => drawRow(item.description, item.amount, invoiceCur, false, idx % 2 === 0));
+
+    // --- GRAND TOTAL ---
+    Y += 3;
+    if (Y + 10 > 278) { doc.addPage(); Y = 14; }
+    doc.setFillColor(20, 20, 20); doc.setDrawColor(0, 0, 0); doc.setLineWidth(0.3);
+    doc.rect(L, Y, W, 10, 'FD');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(255, 255, 255);
+    doc.text('GRAND TOTAL:', L + 3, Y + 7);
+    doc.text(`${invoiceCur} ${fmt(grandTotal)}`, R - 3, Y + 7, { align: 'right' });
+    Y += 12;
+    doc.setTextColor(0, 0, 0);
+
+    if (isFreeReg) {
+        // --- FREE REGISTRATION NOTICE (replaces bank details + payment sections) ---
+        Y += 6;
+        const freeBoxH = 16;
+        if (Y + freeBoxH > 278) { doc.addPage(); Y = 14; }
+        doc.setFillColor(240, 255, 245); doc.setDrawColor(80, 160, 100); doc.setLineWidth(0.4);
+        doc.rect(L, Y, W, freeBoxH, 'FD');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(30, 110, 50);
+        doc.text('NO PAYMENT REQUIRED', L + 4, Y + 7);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(50, 120, 60);
+        doc.text('Your selected registration is at no cost. Please proceed to submit your registration online.', L + 4, Y + 13);
+        Y += freeBoxH + 6;
+
+        // System-generated notice
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(100, 100, 100);
+        doc.text('This document is system-generated and confirms your free registration.', L, Y);
+    } else {
+        // --- BANK DETAILS (de-emphasised — supporting information) ---
+        Y += 4;
+        const bankBoxH = 27;
+        if (Y + bankBoxH > 278) { doc.addPage(); Y = 14; }
+        doc.setFillColor(252, 252, 252); doc.setDrawColor(175, 175, 175); doc.setLineWidth(0.25);
+        doc.rect(L, Y, W, bankBoxH, 'FD');
+
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(100, 100, 100);
+        doc.text('BANK TRANSFER DETAILS', L + 4, Y + 5);
+
+        const bY = Y + 10;
+        const c1 = L + 4, c2 = L + 30, c3 = L + 97, c4 = L + 121;
+        const bankLeft = [['Bank:', 'Sampath Bank PLC'], ['Account Name:', 'Sri Lanka Institute of Information Technology (Gte) Ltd.'], ['Branch:', 'Malabe Branch']];
+        const bankRight = [['Account No:', '003910003002'], ['SWIFT / BIC:', 'BSAMLKLX']];
+
+        doc.setFontSize(7.5);
+        bankLeft.forEach(([lbl, val], i) => {
+            doc.setFont('helvetica', 'bold'); doc.setTextColor(70, 70, 70); doc.text(lbl, c1, bY + i * 4.8);
+            doc.setFont('helvetica', 'normal'); doc.setTextColor(30, 30, 30); doc.text(val, c2, bY + i * 4.8);
+        });
+        bankRight.forEach(([lbl, val], i) => {
+            doc.setFont('helvetica', 'bold'); doc.setTextColor(70, 70, 70); doc.text(lbl, c3, bY + i * 4.8);
+            doc.setFont('helvetica', 'normal'); doc.setTextColor(30, 30, 30); doc.text(val, c4, bY + i * 4.8);
+        });
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(110, 110, 110);
+        doc.text(`* Use your Reference ID "${invoiceNum}" as the payment reference / description.`, L + 4, Y + bankBoxH - 3);
+
+        Y += bankBoxH + 4;
+
+        // --- FOOTER ---
+        const paymentUrl = 'https://pay.sliit.lk/';
+        const refundDeadline = appSettings.refund_deadline || 'August 23, 2026';
+
+        if (Y + 50 > 278) { doc.addPage(); Y = 14; }
+
+        // Payment gateway
+        doc.setFillColor(245, 245, 245); doc.setDrawColor(150, 150, 150); doc.setLineWidth(0.3);
+        doc.rect(L, Y, W, 12, 'FD');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(0, 0, 0);
+        doc.text('Online Payment via SLIIT Gateway:', L + 4, Y + 5);
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(30, 30, 30);
+        doc.text(paymentUrl, L + 4, Y + 9.5);
+        doc.link(L + 4, Y + 6, 52, 4.5, { url: paymentUrl });
+        Y += 16;
+
+        // System-generated notice (replaces signature block)
+        Y += 2;
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(100, 100, 100);
+        doc.text('This invoice is system-generated. No signature is required.', L, Y);
+        Y += 7;
+
+        // Payment notes
+        doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.2);
+        doc.line(L, Y, R, Y);
+        Y += 4;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(30, 30, 30);
+        doc.text('Payment Notes', L, Y);
+        Y += 4.5;
+
+        const notes = [
+            'Direct Deposit (USD): Recommended for international participants. Transfer to Sampath Bank PLC via SWIFT (BSAMLKLX), Account No. 003910003002.',
+            'Wire Transfer (LKR): Use the same Sampath Bank account. Recommended for participants with Sri Lankan banking access.',
+            'Debit/Credit Card (LKR): Pay via the SLIIT Payment Gateway (pay.sliit.lk). A 1.5% bank service charge applies.',
+            `Refund Policy: Requests must be sent to sicet@sliit.lk by ${refundDeadline}. Admin fee: US$20.`
+        ];
+
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(60, 60, 60);
+        notes.forEach((note, i) => {
+            const nLines = doc.splitTextToSize(`${i + 1}. ${note}`, W - 2);
+            if (Y + (nLines.length * 4) > 278) { doc.addPage(); Y = 14; }
+            doc.text(nLines, L, Y);
+            Y += (nLines.length * 4) + 1;
+        });
+
+        Y += 2;
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(150, 150, 150);
+        doc.text('This is a Proforma Invoice — not a tax invoice. Payment confirms registration.', L, Y);
+    }
+
+    const safeName = fullName.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'attendee';
+    const pdfFileName = `SICET2026_Invoice_${invoiceNum}_${safeName}.pdf`;
+    // Browser regression hook: available only on localhost when explicitly enabled.
+    if (invoiceAuditMode) {
+        let auditNode = document.getElementById('sicet-invoice-audit');
+        if (!auditNode) {
+            auditNode = document.createElement('textarea');
+            auditNode.id = 'sicet-invoice-audit';
+            auditNode.hidden = true;
+            document.body.appendChild(auditNode);
+        }
+        auditNode.value = JSON.stringify({ pdfFileName, invoiceCur, grandTotal, lineItems });
+    }
+    // Persist Step 1 before claiming success so the issued reference is recoverable.
+    if (!invoiceAuditMode && APPS_SCRIPT_URL && APPS_SCRIPT_URL !== 'YOUR_APPS_SCRIPT_URL_HERE') {
+        const invoiceButton = document.getElementById('btn-download-invoice');
+        const originalButtonHtml = invoiceButton?.innerHTML || '';
+        if (invoiceButton) {
+            invoiceButton.disabled = true;
+            invoiceButton.innerHTML = `<i class='bx bx-loader bx-spin'></i> Saving reference securely…`;
+        }
+        try {
+            const dataObj = collectFormData(refId);
+            dataObj.Status = isFreeReg ? 'Submitted' : 'Pending Payment';
+            const studentIdInput = document.getElementById('studentId');
+            if (studentIdInput?.files[0]) dataObj['Student_ID_Base64'] = await fileToBase64(studentIdInput.files[0]);
+            if (!await submitToGoogleDrive(dataObj, {
+                attempts: 3,
+                timeoutMs: 60000,
+                silent: true,
+                onRetry: attempt => {
+                    if (invoiceButton) invoiceButton.innerHTML = `<i class='bx bx-loader bx-spin'></i> Connection delayed — retrying (${attempt}/3)…`;
+                }
+            })) {
+                showToast(lastDriveSubmissionError || 'Reference not saved. Please check your connection and retry Step 1 before making payment.', 'error');
+                return;
+            }
+        } catch (error) {
+            showToast(error.message || 'Reference not saved. Please retry Step 1.', 'error');
+            return;
+        } finally {
+            if (invoiceButton) {
+                invoiceButton.disabled = false;
+                invoiceButton.innerHTML = originalButtonHtml;
+            }
+        }
+    }
+    doc.save(pdfFileName);
+
+    // Reveal Step 2 (configured for free or paid flow) and scroll into view
+    _setupStep2(isFreeReg);
+    document.querySelector('.payment-section.mt-4')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const toastMsg = isFreeReg
+        ? `Confirmation downloaded! Reference ID: ${refId} — no payment needed, just submit below.`
+        : `Invoice downloaded! Reference ID: ${refId} — please save this!`;
+    showToast(toastMsg, 'success');
+}
+
+// ---- DRAFT (AUTO-SAVE) LOGIC ----
+
+
+function saveDraft() {
+    const formData = new FormData(registrationForm);
+    const draftData = {};
+
+    for (let [key, value] of formData.entries()) {
+        // Skip files
+        if (value instanceof File) continue;
+
+        // Handle array variables (like multiple apc checkboxes) properly although we used unique names
+        draftData[key] = value;
+    }
+
+    // Explicitly grab checkboxes that might be unchecked (FormData omits unchecked boxes)
+    const checkboxes = registrationForm.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(cb => {
+        draftData[cb.name] = cb.checked;
+    });
+
+    localStorage.setItem('sicet2026_draft', JSON.stringify(draftData));
+}
+
+function restoreDraft() {
+    if (!formDraft) return;
+
+    // 1. Initial Type & Section Load
+    const toggles = ['Registering_Main', 'Registering_Award', 'Registering_Excursion', 'Registering_PreConf', 'Registering_Conference_Workshops'];
+    toggles.forEach(t => {
+        if (formDraft[t] === true) {
+            const el = document.querySelector(`[name="${t}"]`);
+            if (el) {
+                el.checked = true;
+                el.dispatchEvent(new Event('change'));
+            }
+        }
+    });
+
+    // 2. Specialized Generative Prep (Must happen BEFORE populating values)
+    if (formDraft['Number_of_Papers']) {
+        const numPapers = parseInt(formDraft['Number_of_Papers']) || 1;
+        document.getElementById('numberOfPapers').value = numPapers;
+        generatePaperBlocks(numPapers);
+    }
+
+    if (formDraft['Include_Excursion_Main'] === true) {
+        const inclExcEl = document.getElementById('includeExcursionMain');
+        if (inclExcEl) {
+            inclExcEl.checked = true;
+            inclExcEl.dispatchEvent(new Event('change'));
+        }
+    }
+
+    // Restore all apc toggles first so the journal dropdowns appear
+    for (const key in formDraft) {
+        if (key.includes('Include_APC') && formDraft[key] === true) {
+            const el = registrationForm.querySelector(`[name="${key}"]`);
+            if (el) {
+                el.checked = true;
+                el.dispatchEvent(new Event('change'));
+            }
+        }
+    }
+
+    // 3. Populate all standard values
+    for (const key in formDraft) {
+        if (toggles.includes(key) || key === 'Number_of_Papers' || key.includes('Include_APC')) {
+            continue; // Already handled
+        }
+
+        // Radio buttons (e.g. Bill_To) — must match by value, not set .value on the element
+        const radios = registrationForm.querySelectorAll(`[name="${key}"][type="radio"]`);
+        if (radios.length > 0) {
+            radios.forEach(r => {
+                if (r.value === String(formDraft[key])) { r.checked = true; r.dispatchEvent(new Event('change')); }
+            });
+            continue;
+        }
+
+        const el = registrationForm.querySelector(`[name="${key}"]`);
+        if (el) {
+            if (el.type === 'checkbox') {
+                el.checked = formDraft[key];
+                el.dispatchEvent(new Event('change'));
+            } else {
+                el.value = formDraft[key];
+            }
+        }
+    }
+
+    // 4. Fire region/category cascades so field visibility matches the restored values.
+    //    attendeeRegion change controls country/excursion ticket visibility.
+    //    attendeeCategory change controls designation, student ID, inauguration — and also
+    //    calls generatePaperBlocks() which clears the paper values just set in step 3.
+    ['attendeeRegion', 'attendeeCategory'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.value) el.dispatchEvent(new Event('change'));
+    });
+
+    // 5. Re-populate paper fields — same reason as populateFormFromData: category change
+    //    regenerated paper blocks, wiping the values set in step 3.
+    const nPapersDraft = parseInt(formDraft['Number_of_Papers']) || 0;
+    for (let i = 1; i <= nPapersDraft; i++) {
+        const titleEl = document.getElementById(`paperTitle_${i}`);
+        const idEl    = document.getElementById(`paperId_${i}`);
+        const apcEl   = registrationForm.querySelector(`[name="Paper_${i}_Include_APC"]`);
+        const jEl     = document.getElementById(`journal_${i}`);
+        if (titleEl && formDraft[`Paper_${i}_Title`]) titleEl.value = formDraft[`Paper_${i}_Title`];
+        if (idEl    && formDraft[`Paper_${i}_ID`])    idEl.value    = formDraft[`Paper_${i}_ID`];
+        if (apcEl && formDraft[`Paper_${i}_Include_APC`] === true && !apcEl.checked) {
+            apcEl.checked = true; apcEl.dispatchEvent(new Event('change'));
+        }
+        if (jEl && formDraft[`Paper_${i}_Journal`]) jEl.value = formDraft[`Paper_${i}_Journal`];
+    }
+
+    // 6. Restore "Other" purpose text field visibility
+    const prSelDraft = document.getElementById('primaryReason');
+    if (prSelDraft && prSelDraft.value === 'Other') {
+        document.getElementById('primary-reason-other-group')?.classList.remove('hidden');
+    }
+
+    // 7. Final Calculation Recalc
+    calculateTotalFee();
+    showToast('Draft restored successfully', 'success');
+
+    // Update WhatsApp context box so it reflects the restored registration data
+    refreshWaContextBox();
+    renderWaPreview();
+}
+
+function clearDraft() {
+    formDraft = null;
+    localStorage.removeItem('sicet2026_draft');
+}
+
+// ---- VIEW CONTROLLER ----
+
+function switchView(view) {
+    // Reset Navs
+    navFormBtn.classList.remove('active');
+    navAdminBtn.classList.remove('active');
+    navSettingsBtn.classList.remove('active');
+
+    // Reset Sections
+    formSection.classList.add('hidden');
+    adminSection.classList.add('hidden');
+    settingsSection.classList.add('hidden');
+
+    if (view === 'form') {
+        navFormBtn.classList.add('active');
+        formSection.classList.remove('hidden');
+    } else if (view === 'admin') {
+        navAdminBtn.classList.add('active');
+        adminSection.classList.remove('hidden');
+        updateAdminDashboard();
+        if (submissions.length === 0) loadFromGoogleDrive();
+    } else if (view === 'settings') {
+        navSettingsBtn.classList.add('active');
+        settingsSection.classList.remove('hidden');
+    }
+}
+
+async function handleAdminLogin() {
+    const un = document.getElementById('admin-username').value.trim();
+    const pw = document.getElementById('admin-password').value;
+    const errEl = document.getElementById('login-error');
+
+    const btn = document.getElementById('btn-login-submit');
+    btn.disabled = true;
+    try {
+        const response = await fetch(APPS_SCRIPT_URL, {
+            method: 'POST', headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'adminLogin', email: un, password: pw })
+        });
+        const result = await response.json();
+        if (!result.success || !result.token) throw new Error(result.error || 'Invalid credentials');
+        adminToken = result.token;
+        sessionStorage.setItem('sicet2026_admin_token', adminToken);
+        adminLoggedIn = true;
+        navAdminBtn.style.display = '';
+        navAdminBtn.innerHTML = "<i class='bx bx-grid-alt'></i> Dashboard";
+        navSettingsBtn.innerHTML = "<i class='bx bx-cog'></i> Settings";
+        closeLoginModal();
+        switchView(pendingAdminView);
+    } catch (error) {
+        errEl.textContent = error.message || 'Could not authenticate.';
+        errEl.classList.remove('hidden');
+        document.getElementById('admin-password').value = '';
+        document.getElementById('admin-password').focus();
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function closeLoginModal() {
+    document.getElementById('admin-login-modal').classList.add('hidden');
+    document.getElementById('admin-username').value = '';
+    document.getElementById('admin-password').value = '';
+    document.getElementById('login-error').classList.add('hidden');
+}
+
+// ---- ADMIN DASHBOARD LOGIC ----
+
+function updateAdminDashboard() {
+    // ---- Summary Stats ----
+    const total      = submissions.length;
+    const localCount = submissions.filter(s => s.Attendee_Region === 'Local').length;
+    const saarcCount = submissions.filter(s => s.Attendee_Region === 'SAARC').length;
+    const nonSaarc   = submissions.filter(s => s.Attendee_Region === 'Non-SAARC').length;
+    const mainCount  = submissions.filter(s => s.Registration_Type && s.Registration_Type.includes('Main')).length;
+    const awardExc   = submissions.filter(s => s.Registration_Type && (s.Registration_Type.includes('Award') || s.Registration_Type.includes('Excursion'))).length;
+
+    let totalPapers = 0;
+    let totalExcPax = 0;
+    submissions.forEach(s => {
+        totalPapers  += parseInt(s.Number_of_Papers)  || 0;
+        totalExcPax  += (parseInt(s.Excursion_Local_Count) || 0) + (parseInt(s.Excursion_Foreign_Count) || 0);
+    });
+
+    statTotal.textContent = total;
+    statMain.textContent  = mainCount;
+    statAward.textContent = awardExc;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const workshopCount = submissions.filter(s => s.Registration_Type && s.Registration_Type.includes('Pre-Conference')).length;
+    set('stat-workshops', workshopCount);
+    const uniqueVehicleNumbers = new Set(submissions
+        .filter(s => s.Transport_Mode === 'Private Vehicle - Parking Required' ||
+            (s.Transport_Mode === 'Private Vehicle' && String(s.Vehicle_Number || '').trim()))
+        .map(s => String(s.Vehicle_Number || '').trim().toUpperCase())
+        .filter(Boolean));
+    set('stat-private-vehicles', uniqueVehicleNumbers.size);
+    set('stat-local',         localCount);
+    set('stat-saarc',         saarcCount);
+    set('stat-nonsaarc',      nonSaarc);
+    set('stat-papers',        totalPapers);
+    set('stat-excursion-pax', totalExcPax);
+
+    // Last loaded timestamp
+    if (total > 0) {
+        const now = new Date();
+        document.getElementById('dash-last-loaded').innerHTML =
+            `<strong>${total}</strong> registration(s) loaded — last refreshed ${now.toLocaleTimeString()}.`;
+    }
+
+    // Populate filter dropdowns
+    const cats     = [...new Set(submissions.map(s => s.Attendee_Category).filter(Boolean))].sort();
+    const statuses = [...new Set(submissions.map(s => s.Status).filter(Boolean))].sort();
+    const catSel   = document.getElementById('dash-filter-cat');
+    const statSel  = document.getElementById('dash-filter-status');
+    if (catSel) {
+        const prev = catSel.value;
+        catSel.innerHTML = '<option value="">All Categories</option>' +
+            cats.map(c => `<option value="${c}" ${c === prev ? 'selected' : ''}>${c}</option>`).join('');
+    }
+    if (statSel) {
+        const prev = statSel.value;
+        statSel.innerHTML = '<option value="">All Statuses</option>' +
+            statuses.map(s => `<option value="${s}" ${s === prev ? 'selected' : ''}>${s}</option>`).join('');
+    }
+
+    renderOverviewTab();
+    renderLogisticsTab();
+    applyDashFilters(); // renders records tab
+}
+
+// ---- Breakdown helper: count occurrences of field values ----
+function buildBreakdown(data, keyFn, label = 'Item') {
+    const counts = {};
+    data.forEach(s => {
+        const k = (typeof keyFn === 'function' ? keyFn(s) : s[keyFn]) || '(not set)';
+        counts[k] = (counts[k] || 0) + 1;
+    });
+    const total = data.length || 1;
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    if (sorted.length === 0) return '<p style="color:var(--text-muted);font-size:0.85rem;">No data.</p>';
+    return `<table class="dash-breakdown-table"><tbody>` +
+        sorted.map(([k, n]) =>
+            `<tr>
+                <td class="bk-label">${escHtml(k)}</td>
+                <td class="bk-count">${n}</td>
+                <td class="bk-bar-cell"><div class="dash-bar"><div class="dash-bar-fill" style="width:${Math.round((n/total)*100)}%"></div></div></td>
+            </tr>`
+        ).join('') +
+        `</tbody></table>`;
+}
+
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ---- Overview Tab ----
+function renderOverviewTab() {
+    const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+    set('dash-category-breakdown', buildBreakdown(submissions, 'Attendee_Category'));
+    set('dash-region-breakdown',   buildBreakdown(submissions, s => `${s.Attendee_Region || '?'} — ${s.Country || '?'}`));
+    set('dash-regtype-breakdown',  buildBreakdown(submissions, 'Registration_Type'));
+    set('dash-status-breakdown',   buildBreakdown(submissions, 'Status'));
+
+    // Pre-conference workshop breakdown — per session, with region + discount tier sub-counts
+    const sessionCounts = {};
+    (appSettings.pre_conference_sessions || []).forEach(sess => {
+        submissions.forEach(sub => {
+            if ((sub.PreConf_Sessions || '').includes(sess.name)) {
+                if (!sessionCounts[sess.name]) sessionCounts[sess.name] = { total: 0, byRegion: {}, byTier: {} };
+                sessionCounts[sess.name].total++;
+                const rgn  = sub.Attendee_Region || 'Unknown';
+                const tier = sub.Workshop_Discount_Tier || 'regular';
+                sessionCounts[sess.name].byRegion[rgn]  = (sessionCounts[sess.name].byRegion[rgn]  || 0) + 1;
+                sessionCounts[sess.name].byTier[tier]   = (sessionCounts[sess.name].byTier[tier]   || 0) + 1;
+            }
+        });
+    });
+    const sessEntries = Object.entries(sessionCounts).sort((a,b) => b[1].total - a[1].total);
+
+    let sessHtml;
+    if (!sessEntries.length) {
+        sessHtml = '<p style="color:var(--text-muted);font-size:0.85rem;">No pre-conference workshop data yet.</p>';
+    } else {
+        const tierColors = { regular: 'var(--text-muted)', academic: '#4a9eff', student: '#4ade80' };
+        const tierLabels = { regular: 'Regular', academic: 'Academic', student: 'Student' };
+        sessHtml = `<table class="dash-breakdown-table"><tbody>` +
+            sessEntries.map(([name, data]) => {
+                const subRows = Object.entries(data.byRegion).map(([r,c]) =>
+                    `<span style="color:var(--text-muted);font-size:0.78rem;margin-right:8px;">${r}: ${c}</span>`
+                ).join('');
+                const tierRows = Object.entries(data.byTier).map(([t,c]) =>
+                    `<span style="color:${tierColors[t] || 'var(--text-muted)'};font-size:0.78rem;margin-right:8px;">${tierLabels[t] || t}: ${c}</span>`
+                ).join('');
+                return `<tr>
+                    <td class="bk-label">
+                        <div>${escHtml(name)}</div>
+                        <div style="margin-top:2px;">${subRows}</div>
+                        <div style="margin-top:2px;">${tierRows}</div>
+                    </td>
+                    <td class="bk-count">${data.total} attendees</td>
+                    <td class="bk-bar-cell"><div class="dash-bar"><div class="dash-bar-fill" style="width:${Math.round((data.total/submissions.length)*100)}%"></div></div></td>
+                </tr>`;
+            }).join('') + `</tbody></table>`;
+    }
+    set('dash-sessions-breakdown', sessHtml);
+    const conferenceRows = [];
+    submissions.forEach(sub => String(sub.Conference_Workshops || '').split(',').map(name => name.trim()).filter(Boolean).forEach(name => conferenceRows.push({ name })));
+    set('dash-conference-workshops-breakdown', buildBreakdown(conferenceRows, 'name'));
+}
+
+// ---- Logistics Tab ----
+function renderLogisticsTab() {
+    const set = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+
+    // Food
+    set('dash-food-breakdown', buildBreakdown(submissions, 'Food_Preference'));
+
+    // Excursion
+    let excLocal = 0, excForeign = 0;
+    const mobilityMap = {}, activityMap = {};
+    submissions.forEach(s => {
+        excLocal   += parseInt(s.Excursion_Local_Count)   || 0;
+        excForeign += parseInt(s.Excursion_Foreign_Count) || 0;
+        if (s.Excursion_Mobility && s.Excursion_Mobility !== '0' && s.Excursion_Mobility !== '') {
+            mobilityMap[s.Excursion_Mobility] = (mobilityMap[s.Excursion_Mobility] || 0) + 1;
+        }
+        if (s.Excursion_Activity && s.Excursion_Activity !== '0' && s.Excursion_Activity !== '') {
+            activityMap[s.Excursion_Activity] = (activityMap[s.Excursion_Activity] || 0) + 1;
+        }
+    });
+    const excHtml = logRow('Local Excursion Pax', excLocal) +
+        logRow('Foreign Excursion Pax', excForeign) +
+        logRow('Total Excursion Pax', excLocal + excForeign) +
+        (Object.keys(mobilityMap).length ?
+            '<div style="margin-top:10px;margin-bottom:4px;font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Mobility Needs</div>' +
+            Object.entries(mobilityMap).map(([k,v]) => logRow(k, v)).join('') : '') +
+        (Object.keys(activityMap).length ?
+            '<div style="margin-top:10px;margin-bottom:4px;font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Activity Preference</div>' +
+            Object.entries(activityMap).map(([k,v]) => logRow(k, v)).join('') : '');
+    set('dash-excursion-breakdown', excHtml || '<p style="color:var(--text-muted);font-size:0.85rem;">No excursion registrations.</p>');
+
+    // Inauguration
+    const inaugYes = submissions.filter(s =>
+        s.Include_Inauguration === true   ||
+        s.Include_Inauguration === 'true' ||
+        s.Include_Inauguration === 'on'   ||
+        s.Include_Inauguration === 'Yes'
+    ).length;
+    const inaugNo  = submissions.length - inaugYes;
+    set('dash-inauguration-breakdown',
+        logRow('Opted In', inaugYes) +
+        logRow('Not Included', inaugNo));
+
+    // Countries
+    set('dash-countries-breakdown', buildBreakdown(submissions, 'Country'));
+    set('dash-transport-breakdown', buildBreakdown(submissions, s => {
+        if (s.Transport_Mode === 'Private Vehicle - Parking Required' || s.Transport_Mode === 'Private Vehicle') {
+            return s.Vehicle_Number ? `Private Vehicle — ${s.Vehicle_Number}` : 'Private Vehicle — number missing';
+        }
+        return s.Transport_Mode || 'Not supplied (legacy record)';
+    }));
+
+    // Revenue
+    let revLKR = 0, revUSD = 0;
+    submissions.forEach(s => {
+        const fee = parseFloat(s.Calculated_Total_Fee) || 0;
+        if (s.Currency === 'LKR') revLKR += fee;
+        else if (s.Currency === 'USD') revUSD += fee;
+    });
+    const rate = appSettings.usd_to_lkr || 320;
+    const revHtml =
+        logRow('Total Revenue (LKR)', 'LKR ' + revLKR.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})) +
+        logRow('Total Revenue (USD)', 'USD ' + revUSD.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})) +
+        logRow('Combined Estimate (LKR)', 'LKR ' + (revLKR + revUSD * rate).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}));
+    set('dash-revenue-breakdown', revHtml);
+}
+
+function logRow(label, value) {
+    return `<div class="logistics-row"><span class="lr-label">${escHtml(String(label))}</span><span class="lr-value">${escHtml(String(value))}</span></div>`;
+}
+
+// ---- Records Tab with search + filter ----
+function applyDashFilters() {
+    const search    = (document.getElementById('dash-search')?.value || '').toLowerCase();
+    const catFilter = document.getElementById('dash-filter-cat')?.value || '';
+    const regFilter = document.getElementById('dash-filter-region')?.value || '';
+    const statFilter= document.getElementById('dash-filter-status')?.value || '';
+
+    dashFilteredRows = submissions.filter(s => {
+        if (catFilter  && s.Attendee_Category !== catFilter)  return false;
+        if (regFilter  && s.Attendee_Region   !== regFilter)  return false;
+        if (statFilter && s.Status            !== statFilter) return false;
+        if (search) {
+            const blob = [s.Full_Name, s.Email, s.Invoice_ID, s.Organization,
+                          s.Country, s.Phone, s.Transaction_Ref].join(' ').toLowerCase();
+            if (!blob.includes(search)) return false;
+        }
+        return true;
+    });
+
+    const countEl = document.getElementById('dash-record-count');
+    if (countEl) countEl.textContent = dashFilteredRows.length + ' of ' + submissions.length + ' record(s)';
+
+    renderRecordsTable(dashFilteredRows);
+}
+
+function renderRecordsTable(rows) {
+    tableBody.innerHTML = '';
+    if (submissions.length === 0) {
+        tableBody.innerHTML = '<tr class="empty-row"><td colspan="13">Click <strong>Refresh from Drive</strong> to load registrations.</td></tr>';
+        return;
+    }
+    if (rows.length === 0) {
+        tableBody.innerHTML = '<tr class="empty-row"><td colspan="13">No registrations match your filter.</td></tr>';
+        return;
+    }
+
+    // Build a set of emails that appear more than once across ALL submissions (not just filtered rows)
+    const emailCount = {};
+    submissions.forEach(s => { if (s.Email) emailCount[s.Email.toLowerCase()] = (emailCount[s.Email.toLowerCase()] || 0) + 1; });
+    const dupEmails = new Set(Object.keys(emailCount).filter(e => emailCount[e] > 1));
+
+    const sorted = [...rows].reverse();
+    sorted.forEach((sub, i) => {
+        const tr = document.createElement('tr');
+        tr.className = 'clickable-row';
+        const papers = parseInt(sub.Number_of_Papers) || 0;
+        const fee    = parseFloat(sub.Calculated_Total_Fee) || 0;
+        const dateStr = sub.Submission_Date ? String(sub.Submission_Date).split(',')[0].split('T')[0] : '—';
+        const isDup  = sub.Email && dupEmails.has(sub.Email.toLowerCase());
+        if (isDup) tr.style.background = 'rgba(255,77,77,0.04)';
+
+        const dupBadge = isDup ? `<span title="Duplicate email detected" style="margin-left:5px;font-size:0.7rem;background:rgba(255,77,77,0.15);color:#ff6b6b;border:1px solid rgba(255,77,77,0.3);border-radius:4px;padding:1px 5px;">DUP</span>` : '';
+        tr.innerHTML = `
+            <td style="color:var(--text-muted);font-size:0.8rem;">${sorted.length - i}</td>
+            <td style="white-space:nowrap;font-size:0.82rem;">${escHtml(dateStr)}</td>
+            <td style="font-size:0.78rem;color:var(--accent);font-family:monospace;">${escHtml(sub.Invoice_ID || '—')}</td>
+            <td><strong>${escHtml((sub.Title ? sub.Title + ' ' : '') + (sub.Full_Name || ''))}</strong><br><small style="color:var(--text-muted);">${escHtml(sub.Organization || '')}</small></td>
+            <td style="font-size:0.82rem;">${escHtml(sub.Email || '—')}${dupBadge}</td>
+            <td><span class="badge ${getCatBadge(sub.Attendee_Category)}">${escHtml(sub.Attendee_Category || 'N/A')}</span></td>
+            <td style="font-size:0.82rem;">${escHtml(sub.Attendee_Region || '—')}</td>
+            <td style="font-size:0.82rem;">${escHtml(sub.Country || '—')}</td>
+            <td><span class="badge ${getRegTypeBadge(sub.Registration_Type)}" style="font-size:0.72rem;">${escHtml(sub.Registration_Type || 'N/A')}</span></td>
+            <td style="text-align:center;">${papers > 0 ? papers : '—'}</td>
+            <td style="white-space:nowrap;font-size:0.82rem;">${fee > 0 ? escHtml(sub.Currency || '') + ' ' + fee.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'}</td>
+            <td><span class="badge ${getStatusBadge(sub.Status)}">${escHtml(sub.Status || 'Submitted')}</span></td>
+            <td><button class="btn-detail">View</button></td>
+        `;
+        tr.querySelector('.btn-detail').addEventListener('click', (e) => {
+            e.stopPropagation();
+            openRecordModal(sub);
+        });
+        tr.addEventListener('click', () => openRecordModal(sub));
+        tableBody.appendChild(tr);
+    });
+}
+
+function getCatBadge(cat) {
+    if (!cat) return 'badge-default';
+    const c = cat.toLowerCase();
+    if (c.includes('author') && !c.includes('non')) return 'badge-main';
+    if (c.includes('student')) return 'badge-ok';
+    return 'badge-default';
+}
+
+function getRegTypeBadge(type) {
+    if (!type) return 'badge-default';
+    if (type.includes('Main') && type.includes('Award') || type.includes('Main') && type.includes('Excursion')) return 'badge-multi';
+    if (type.includes('Main')) return 'badge-main';
+    if (type.includes('Award')) return 'badge-award';
+    if (type.includes('Excursion')) return 'badge-excursion';
+    return 'badge-default';
+}
+
+function getStatusBadge(s) {
+    if (!s) return 'badge-pending';
+    const l = s.toLowerCase();
+    if (l.includes('confirm') || l.includes('paid') || l.includes('approv')) return 'badge-ok';
+    if (l.includes('pending') || l.includes('submit')) return 'badge-pending';
+    return 'badge-default';
+}
+
+// ---- Record Detail Modal ----
+function openRecordModal(sub) {
+    document.getElementById('record-modal-title').textContent =
+        (sub.Title ? sub.Title + ' ' : '') + (sub.Full_Name || 'Registration') + ' — ' + (sub.Invoice_ID || '');
+
+    const sections = [
+        {
+            title: 'Personal Information',
+            fields: [
+                ['Title',             sub.Title],
+                ['Full Name',         sub.Full_Name],
+                ['Certificate Name',  sub.Certificate_Name],
+                ['Email',             sub.Email],
+                ['Phone',             sub.Phone],
+                ['Designation',       sub.Designation],
+                ['Organization',      sub.Organization],
+            ]
+        },
+        {
+            title: 'Registration Details',
+            fields: [
+                ['Reference ID',       sub.Invoice_ID],
+                ['Submission Date',    sub.Submission_Date],
+                ['Status',             sub.Status],
+                ['Attendee Category',  sub.Attendee_Category],
+                ['Region',             sub.Attendee_Region],
+                ['Country',            sub.Country],
+                ['Transportation',     sub.Transport_Mode],
+                ['Vehicle Number',     sub.Vehicle_Number],
+                ['Registration Type',  sub.Registration_Type],
+                ['Primary Reason',     sub.Primary_Reason + (sub.Primary_Reason_Other ? ' — ' + sub.Primary_Reason_Other : '')],
+            ]
+        },
+        {
+            title: 'Financial',
+            fields: [
+                ['Total Fee',          sub.Calculated_Total_Fee ? (sub.Currency + ' ' + parseFloat(sub.Calculated_Total_Fee).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})) : null],
+                ['Currency',           sub.Currency],
+                ['Transaction Ref',    sub.Transaction_Ref],
+                ['Drive Folder',       sub.Drive_Folder_URL ? `<a href="${escHtml(sub.Drive_Folder_URL)}" target="_blank" rel="noopener">Open in Drive</a>` : null],
+            ]
+        },
+        {
+            title: 'Academic / Papers',
+            fields: [
+                ['Number of Papers',    sub.Number_of_Papers],
+                ['Paper Details',       sub.Paper_Details],
+                ['Changes from CMT',    sub.CMT_Changes],
+                ['Pre-Conf Sessions',   sub.PreConf_Sessions],
+                ['Conference Workshops', sub.Conference_Workshops],
+                ['Food Preference',     sub.Food_Preference],
+                ['Include Inauguration',sub.Include_Inauguration],
+            ]
+        },
+        {
+            title: 'Award Details',
+            fields: [
+                ['Company / Org Name', sub.Company_Name],
+                ['Participant Count',  sub.Participant_Count],
+                ['Participant Names',  sub.Participant_Names],
+                ['Award Category',     sub.Award_Category],
+            ]
+        },
+        {
+            title: 'Excursion Details',
+            fields: [
+                ['Local Pax',          sub.Excursion_Local_Count],
+                ['Foreign Pax',        sub.Excursion_Foreign_Count],
+                ['Mobility Needs',     sub.Excursion_Mobility],
+                ['Activity Preference',sub.Excursion_Activity],
+            ]
+        },
+        {
+            title: 'Additional Info',
+            fields: [
+                ['Notes', sub.Additional_Info],
+            ]
+        },
+    ];
+
+    const html = sections.map(sec => {
+        const filledFields = sec.fields.filter(([, v]) => v !== null && v !== undefined && v !== '');
+        if (filledFields.length === 0) return '';
+        return `<div class="record-section">
+            <div class="record-section-title">${escHtml(sec.title)}</div>
+            <div class="record-fields">
+                ${filledFields.map(([label, val]) =>
+                    `<div class="record-field">
+                        <div class="rf-label">${escHtml(label)}</div>
+                        <div class="rf-value">${label === 'Drive Folder' ? val : escHtml(String(val || '—'))}</div>
+                    </div>`
+                ).join('')}
+            </div>
+        </div>`;
+    }).join('');
+
+    const proofSection = sub.Invoice_ID
+        ? `<div class="record-section">
+            <div class="record-section-title"><i class='bx bx-receipt' style="margin-right:6px;"></i>Payment Proofs</div>
+            <div id="proof-preview-container" class="proof-drive-list"></div>
+           </div>`
+        : '';
+
+    document.getElementById('record-modal-body').innerHTML = (html || '<p style="color:var(--text-muted);">No details available.</p>') + proofSection;
+    document.getElementById('record-detail-modal').classList.remove('hidden');
+
+    if (sub.Invoice_ID) {
+        const proofContainer = document.getElementById('proof-preview-container');
+        fetchAndShowPaymentProofs(sub.Invoice_ID, proofContainer);
+    }
+}
+
+function exportToExcel() {
+    if (submissions.length === 0) {
+        showToast('No data to export!', 'error');
+        return;
+    }
+    try {
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(submissions);
+        // Column widths
+        ws['!cols'] = [
+            {wch:22},{wch:25},{wch:12},{wch:12},{wch:30},{wch:32},{wch:18},{wch:18},
+            {wch:18},{wch:10},{wch:15},{wch:12},{wch:20},{wch:10},{wch:25},{wch:20},
+            {wch:18},{wch:10},{wch:10},{wch:25},{wch:12},{wch:18},{wch:20},{wch:20},
+            {wch:12},{wch:14},{wch:20},{wch:20},{wch:20},{wch:35},{wch:40}
+        ];
+        XLSX.utils.book_append_sheet(wb, ws, 'Registrations');
+        XLSX.writeFile(wb, 'SICET_2026_Registrations.xlsx');
+        showToast('Exported ' + submissions.length + ' records to Excel.', 'success');
+    } catch (err) {
+        console.error('Export error:', err);
+        showToast('Error exporting data. Please try again.', 'error');
+    }
+}
+
+
+// ---- ADMIN SETTINGS LOGIC ----
+
+function populateSettingsForm() {
+    document.getElementById('fee_conf_student_discount').value = appSettings.discounts.student_from_2nd;
+    document.getElementById('fee_discount_max_papers').value = appSettings.discounts.discount_max_papers || 0;
+
+    // Awards & Excursion
+    document.getElementById('fee_award_base').value = appSettings.award_fee;
+    document.getElementById('fee_inauguration').value = appSettings.inauguration_fee || 0;
+    document.getElementById('fee_inauguration_usd').value = appSettings.inauguration_fee_usd || 0;
+    document.getElementById('fee_excursion_local').value = appSettings.excursion_fees.local;
+    document.getElementById('fee_excursion_foreigner').value = appSettings.excursion_fees.foreigner;
+
+    // Invoice / Chair & Refund
+    document.getElementById('setting_chair_name').value = appSettings.chair_name || '';
+    document.getElementById('setting_refund_deadline').value = appSettings.refund_deadline || 'August 23, 2026';
+    document.getElementById('setting_usd_rate').value = appSettings.usd_to_lkr || 320;
+
+    const refundNotice = document.getElementById('notice-refund-deadline');
+    if (refundNotice) refundNotice.textContent = appSettings.refund_deadline || 'August 23, 2026';
+    const exchangeNotice = document.getElementById('notice-exchange-rate');
+    if (exchangeNotice) exchangeNotice.textContent = appSettings.usd_to_lkr || 320;
+
+    // APC collection active
+    const apcActiveEl = document.getElementById('setting_apc_active');
+    if (apcActiveEl) apcActiveEl.checked = appSettings.apc_collection_active || false;
+
+    // Pre-Conference Workshops hidden
+    const preconfHiddenEl = document.getElementById('setting_preconf_hidden');
+    if (preconfHiddenEl) preconfHiddenEl.checked = appSettings.preconf_workshops_hidden || false;
+
+    // Journals
+    renderJournalsAdmin();
+    // Categories & Sessions
+    renderCategoriesAdmin();
+    renderSessionsAdmin();
+    renderConferenceWorkshopsAdmin();
+    // Award & Excursion options
+    renderAwardOptionsAdmin();
+    renderExcursionOptionsAdmin();
+}
+
+function renderJournalsAdmin() {
+    const list = document.getElementById('journals-list');
+    list.innerHTML = '';
+
+    appSettings.journals.forEach((j, index) => {
+        const div = document.createElement('div');
+        div.className = 'journal-entry form-group row';
+        div.dataset.itemId = j.id;
+        div.innerHTML = `
+            <div class="input-field col">
+                <label>Journal Name</label>
+                <input type="text" class="journal-name" value="${j.name}" required>
+            </div>
+            <div class="input-field col">
+                <label>Fee (USD)</label>
+                <input type="number" class="journal-fee" value="${j.apc_not_applicable ? 0 : j.fee}" min="0" ${j.apc_not_applicable ? 'disabled' : ''} required>
+            </div>
+            <label style="display:flex;align-items:center;gap:7px;padding:0 8px 9px;white-space:nowrap;font-size:0.82rem;cursor:pointer;">
+                <input type="checkbox" class="journal-apc-na" ${j.apc_not_applicable ? 'checked' : ''}>
+                APC not applicable
+            </label>
+            <button type="button" class="btn-remove-journal" onclick="removeJournal(${index})"><i class='bx bx-trash'></i></button>
+        `;
+        const naCheckbox = div.querySelector('.journal-apc-na');
+        const feeInput = div.querySelector('.journal-fee');
+        naCheckbox.addEventListener('change', () => {
+            feeInput.disabled = naCheckbox.checked;
+            if (naCheckbox.checked) feeInput.value = 0;
+        });
+        list.appendChild(div);
+    });
+}
+
+function addJournalField() {
+    appSettings.journals.push({ id: 'j' + Date.now(), name: '', fee: 0, apc_not_applicable: false });
+    renderJournalsAdmin();
+}
+
+// Make globally accessible for inline onclick
+window.removeJournal = function (index) {
+    appSettings.journals.splice(index, 1);
+    renderJournalsAdmin();
+};
+
+async function saveSettings(e) {
+    e.preventDefault();
+    const previousSettings = JSON.parse(JSON.stringify(appSettings));
+
+    appSettings.discounts.student_from_2nd  = Number(document.getElementById('fee_conf_student_discount').value);
+    appSettings.discounts.discount_max_papers = Number(document.getElementById('fee_discount_max_papers').value) || 0;
+
+    appSettings.award_fee = Number(document.getElementById('fee_award_base').value);
+    appSettings.inauguration_fee = Number(document.getElementById('fee_inauguration').value) || 0;
+    appSettings.inauguration_fee_usd = Number(document.getElementById('fee_inauguration_usd').value) || 0;
+    const apcActiveEl = document.getElementById('setting_apc_active');
+    appSettings.apc_collection_active = apcActiveEl ? apcActiveEl.checked : false;
+
+    const preconfHiddenEl = document.getElementById('setting_preconf_hidden');
+    appSettings.preconf_workshops_hidden = preconfHiddenEl ? preconfHiddenEl.checked : false;
+
+    appSettings.excursion_fees.local = Number(document.getElementById('fee_excursion_local').value);
+    appSettings.excursion_fees.foreigner = Number(document.getElementById('fee_excursion_foreigner').value);
+
+    // Invoice / Chair & Refund
+    appSettings.chair_name = document.getElementById('setting_chair_name').value.trim() || '[Name]';
+    appSettings.refund_deadline = document.getElementById('setting_refund_deadline').value.trim() || 'August 23, 2026';
+    appSettings.usd_to_lkr = Number(document.getElementById('setting_usd_rate').value) || 320;
+
+    const refundNotice = document.getElementById('notice-refund-deadline');
+    if (refundNotice) refundNotice.textContent = appSettings.refund_deadline;
+    const exchangeNotice = document.getElementById('notice-exchange-rate');
+    if (exchangeNotice) exchangeNotice.textContent = appSettings.usd_to_lkr;
+
+    // Save Journals
+    const jNames = document.querySelectorAll('.journal-name');
+    const jFees = document.querySelectorAll('.journal-fee');
+    const newJournals = [];
+
+    for (let i = 0; i < jNames.length; i++) {
+        if (jNames[i].value.trim() !== '') {
+            const row = jNames[i].closest('.journal-entry');
+            const notApplicable = row?.querySelector('.journal-apc-na')?.checked === true;
+            newJournals.push({
+                id: row?.dataset?.itemId || 'j' + Date.now() + '_' + i,
+                name: jNames[i].value.trim(),
+                fee: notApplicable ? 0 : Number(jFees[i].value),
+                apc_not_applicable: notApplicable
+            });
+        }
+    }
+    appSettings.journals = newJournals;
+
+    // Categories
+    saveCategoriesFromAdmin();
+    // Sessions
+    saveSessionsFromAdmin();
+    saveConferenceWorkshopsFromAdmin();
+    // Award & Excursion dropdown options
+    saveAwardOptionsFromAdmin();
+    saveExcursionOptionsFromAdmin();
+
+    showToast('Saving to Google Drive…', 'success');
+
+    // Drive is authoritative. Do not publish calculations or cache the new
+    // configuration until the backend confirms that the canonical file exists.
+    const result = await pushSettingsToDrive(appSettings);
+    if (!result?.success) {
+        appSettings = previousSettings;
+        rebuildCategoryDropdown();
+        rebuildSessionCheckboxes();
+        rebuildConferenceWorkshopCheckboxes();
+        populateJournalsDropdown();
+        rebuildAwardCategoryDropdown();
+        rebuildAwardPurposeDropdown();
+        rebuildExcursionMobilityDropdown();
+        rebuildExcursionActivityDropdown();
+        updateCostPreviews();
+        showToast(result?.error || 'Settings were not saved to Google Drive. Your entered values remain on screen for retry.', 'error');
+        return;
+    }
+
+    if (result.settingsMeta) appSettings._meta = result.settingsMeta;
+    localStorage.setItem('sicet2026_settings', JSON.stringify(appSettings));
+    populateJournalsDropdown();
+    rebuildCategoryDropdown();
+    rebuildSessionCheckboxes();
+    rebuildConferenceWorkshopCheckboxes();
+    rebuildAwardCategoryDropdown();
+    rebuildAwardPurposeDropdown();
+    rebuildExcursionMobilityDropdown();
+    rebuildExcursionActivityDropdown();
+    generatePaperBlocks(parseInt(document.getElementById('numberOfPapers')?.value) || 1);
+    updateCostPreviews();
+    const _waIssueType = document.getElementById('wa-issue-type')?.value;
+    if (_waIssueType === 'award')   renderWaAwardCategory();
+    if (_waIssueType === 'preconf') renderWhatsAppWorkshops();
+    showToast('Settings saved to Google Drive and applied to registration calculations.', 'success');
+}
+
+function populateJournalsDropdown() {
+    const journalSelect = document.getElementById('journalCategory');
+    if (!journalSelect) return;
+
+    journalSelect.innerHTML = '<option value="" disabled selected>Select Journal</option>';
+
+    appSettings.journals.forEach(j => {
+        const opt = document.createElement('option');
+        opt.value = j.name;
+        opt.dataset.fee = j.apc_not_applicable ? 0 : j.fee;
+        opt.dataset.apcNotApplicable = j.apc_not_applicable === true;
+        opt.textContent = j.apc_not_applicable ? `${j.name} — APC not applicable` : `${j.name} ($${j.fee})`;
+        journalSelect.appendChild(opt);
+    });
+}
+
+// Utilities
+function showToast(message, type) {
+    let toast = document.getElementById('toast-notification');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toast-notification';
+        document.body.appendChild(toast);
+    }
+    toast.className = `toast ${type}`;
+    const icon = type === 'success' ? 'bx-check-circle' : 'bx-error-circle';
+    toast.innerHTML = `<i class='bx ${icon}'></i><span>${message}</span>`;
+
+    setTimeout(() => toast.classList.add('show'), 10);
+    setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+// Utility: Debounce for Auto-Save
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Badge + submit state CSS injected
+const style = document.createElement('style');
+style.innerHTML = `
+    .badge {
+        padding: 0.3rem 0.6rem;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        background: rgba(255,255,255,0.1);
+    }
+    .badge-main { color: #4a68ff; background: rgba(74, 104, 255, 0.15); }
+    .badge-apc { color: #00e5ff; background: rgba(0, 229, 255, 0.15); }
+    .badge-award { color: #e62e6b; background: rgba(230, 46, 107, 0.15); }
+    .badge-excursion { color: #20c997; background: rgba(32, 201, 151, 0.15); }
+    #btn-submit.btn-blocked {
+        opacity: 0.55;
+        cursor: not-allowed;
+        filter: grayscale(30%);
+    }
+`;
+document.head.appendChild(style);
+
+// ---- GOOGLE DRIVE HELPERS ----
+
+async function fileToBase64(file) {
+    if (!file || file.size === 0) throw new Error('The selected file is empty. Please choose a valid file.');
+    const mimeType = resolveUploadMime(file);
+    if (!mimeType) throw new Error(`"${file.name}" is not a supported PDF, JPEG, PNG, or WebP file.`);
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const encoded = String(ev.target?.result || '').split(',')[1];
+            if (!encoded) {
+                reject(new Error(`"${file.name}" could not be read. Please choose it again.`));
+                return;
+            }
+            resolve({ name: file.name, mimeType, data: encoded });
+        };
+        reader.onerror = () => reject(new Error(`"${file.name}" could not be read by this browser. Please choose it again.`));
+        reader.onabort = () => reject(new Error(`Reading "${file.name}" was interrupted. Please retry.`));
+        reader.readAsDataURL(file);
+    });
+}
+
+function resolveUploadMime(file) {
+    const declared = String(file?.type || '').toLowerCase();
+    const extension = String(file?.name || '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] || '';
+    const byExtension = {
+        pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+        png: 'image/png', webp: 'image/webp'
+    };
+    const allowedDeclared = {
+        'application/pdf': 'application/pdf', 'image/jpeg': 'image/jpeg',
+        'image/jpg': 'image/jpeg', 'image/png': 'image/png', 'image/webp': 'image/webp'
+    };
+    return allowedDeclared[declared] || byExtension[extension] || '';
+}
+
+// Show a "previously uploaded" note next to a file input when loading saved data
+// ---- PAYMENT PROOF MULTI-FILE PREVIEW ----
+
+function updatePaymentProofUI() {
+    let area = document.getElementById('payment-proof-preview');
+    if (!area) {
+        // Fallback: create the preview container if old cached HTML omitted it
+        const input = document.getElementById('paymentProof');
+        if (!input) return;
+        area = document.createElement('div');
+        area.id = 'payment-proof-preview';
+        area.className = 'proof-preview-list';
+        input.insertAdjacentElement('afterend', area);
+    }
+    if (!paymentProofFiles.length) {
+        if (paymentProofPreviouslyUploaded) {
+            area.innerHTML = `<div class="proof-preview-item proof-preview-item--uploaded">
+                <div class="proof-uploaded-icon"><i class='bx bx-check-circle'></i></div>
+                <div class="proof-info">
+                    <span class="proof-name">Previously uploaded</span>
+                    <span class="proof-size">On file — upload a new file below to replace</span>
+                </div>
+            </div>`;
+        } else {
+            area.innerHTML = '';
+        }
+        updateSubmitButtonState();
+        return;
+    }
+
+    area.innerHTML = paymentProofFiles.map((file, i) => {
+        const isImg = file.type.startsWith('image/');
+        const sizeMB = (file.size / 1048576).toFixed(2);
+        const thumb = isImg
+            ? `<img class="proof-thumb" src="${URL.createObjectURL(file)}" alt="${escHtml(file.name)}">`
+            : `<div class="proof-pdf-icon"><i class='bx bxs-file-pdf'></i></div>`;
+        return `<div class="proof-preview-item">
+            ${thumb}
+            <div class="proof-info">
+                <span class="proof-name" title="${escHtml(file.name)}">${escHtml(file.name)}</span>
+                <span class="proof-size">${sizeMB} MB</span>
+            </div>
+            <button type="button" class="proof-remove" onclick="removePaymentProof(${i})" title="Remove">
+                <i class='bx bx-x'></i>
+            </button>
+        </div>`;
+    }).join('');
+
+    updateSubmitButtonState();
+}
+
+function removePaymentProof(idx) {
+    paymentProofFiles.splice(idx, 1);
+    updatePaymentProofUI();
+}
+
+// ---- ADMIN: FETCH PAYMENT PROOF FILES FROM DRIVE ----
+
+async function fetchAndShowPaymentProofs(refId, container) {
+    container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;"><i class="bx bx-loader bx-spin"></i> Loading payment proofs…</p>';
+    try {
+        const url = `${APPS_SCRIPT_URL}?action=getPaymentProofs&ref=${encodeURIComponent(refId)}&token=${encodeURIComponent(adminToken)}`;
+        const res = await fetch(url);
+        const json = await res.json();
+        if (!json.success || !json.files || json.files.length === 0) {
+            container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">No payment proof files found in Drive folder.</p>';
+            return;
+        }
+        container.innerHTML = json.files.map(f => {
+            const isImg = (f.mimeType || '').startsWith('image/');
+            const thumb = isImg
+                ? `<img class="proof-thumb-admin" src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.fileId)}&sz=w400" alt="${escHtml(f.name)}" onerror="this.style.display='none'">`
+                : `<div class="proof-pdf-icon proof-pdf-admin"><i class='bx bxs-file-pdf'></i></div>`;
+            return `<a class="proof-drive-card" href="${escHtml(f.url)}" target="_blank" rel="noopener" title="Open ${escHtml(f.name)} in Drive">
+                ${thumb}
+                <span class="proof-name">${escHtml(f.name)}</span>
+                <span class="proof-open-hint"><i class='bx bx-link-external'></i> Open in Drive</span>
+            </a>`;
+        }).join('');
+    } catch (err) {
+        container.innerHTML = `<p style="color:#e05;font-size:0.85rem;">Could not load files: ${escHtml(err.message)}</p>`;
+    }
+}
+
+function showUploadedStatus(inputId, label) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const container = input.closest('.input-field') || input.parentElement;
+    const existing = container.querySelector('.upload-status-note');
+    if (existing) existing.remove();
+    const note = document.createElement('div');
+    note.className = 'upload-status-note';
+    note.style.cssText = 'margin-top:6px;padding:7px 12px;background:rgba(37,211,102,0.09);border:1px solid rgba(37,211,102,0.35);border-radius:7px;font-size:0.82rem;color:#25d366;display:flex;align-items:center;gap:7px;';
+    note.innerHTML = `<i class='bx bx-check-circle' style="font-size:1rem;flex-shrink:0;"></i><span>${label} — re-upload only if you need to replace it.</span>`;
+    input.insertAdjacentElement('afterend', note);
+}
+
+async function submitToGoogleDrive(dataObj, options = {}) {
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+        lastDriveSubmissionError = 'Google Drive not configured. Ask the admin to deploy the Apps Script first.';
+        if (!options.silent) showToast(lastDriveSubmissionError, 'error');
+        return false;
+    }
+    const attempts = Math.max(1, Number(options.attempts) || 1);
+    const timeoutMs = Math.max(10000, Number(options.timeoutMs) || 120000);
+    lastDriveSubmissionError = '';
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await fetch(APPS_SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify(dataObj),
+                signal: controller.signal
+            });
+            if (!response.ok) {
+                const httpError = new Error(`Upload server returned HTTP ${response.status}.`);
+                httpError.retryable = response.status >= 500 || response.status === 429;
+                throw httpError;
+            }
+            const responseText = await response.text();
+            let result;
+            try {
+                result = JSON.parse(responseText);
+            } catch (_) {
+                const parseError = new Error('Upload server returned an unreadable response.');
+                parseError.retryable = true;
+                throw parseError;
+            }
+            if (result.success) return true;
+
+            lastDriveSubmissionError = result.error || 'The server rejected the registration.';
+            const retryableServerError = /server busy|try again|temporar|timeout/i.test(lastDriveSubmissionError);
+            if (!retryableServerError || attempt === attempts) break;
+        } catch (err) {
+            lastDriveSubmissionError = err.name === 'AbortError'
+                ? 'The connection timed out while saving your reference.'
+                : (err.message || 'Network error while saving your registration.');
+            const retryable = err.name === 'AbortError' || err.retryable !== false;
+            console.error(`Drive submission attempt ${attempt} failed:`, err);
+            if (!retryable || attempt === attempts) break;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+        if (typeof options.onRetry === 'function') options.onRetry(attempt + 1);
+        await new Promise(resolve => setTimeout(resolve, 700 * attempt));
+    }
+
+    lastDriveSubmissionError = `${lastDriveSubmissionError} Your details are still on this page; please retry Step 1. If it continues, select “Technical Difficulty / Registration System” under Have a Query.`;
+    if (!options.silent) showToast(lastDriveSubmissionError, 'error');
+    return false;
+}
+
+async function loadFromGoogleDrive() {
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+        showToast('Google Drive not configured.', 'error');
+        return;
+    }
+    const btn = document.getElementById('btn-clear');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bx bx-loader bx-spin"></i> Loading…'; }
+
+    try {
+        const url = APPS_SCRIPT_URL + '?action=getSubmissions&token=' + encodeURIComponent(adminToken);
+        const res = await fetch(url);
+        const result = await res.json();
+
+        if (result.success) {
+            submissions = result.submissions || [];
+            updateAdminDashboard();
+            showToast('Loaded ' + submissions.length + ' registration(s) from Google Drive', 'success');
+        } else {
+            if (result.error === 'Unauthorized') {
+                adminToken = '';
+                sessionStorage.removeItem('sicet2026_admin_token');
+                showToast('Admin session expired or the backend password changed. Please sign in again.', 'error');
+            } else {
+                showToast('Drive error: ' + (result.error || 'Unable to load registrations'), 'error');
+            }
+        }
+    } catch (err) {
+        showToast('Could not connect to Google Drive. Check Apps Script URL.', 'error');
+        console.error('Drive load error:', err);
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bx bx-refresh"></i> Refresh from Drive'; }
+    }
+}
+
+// ---- SUBMIT BUTTON STATE ----
+
+function updateSubmitButtonState() {
+    const submitBtn = document.getElementById('btn-submit');
+    const submitNote = document.getElementById('submit-payment-note');
+    // Free registrations need no payment proof — allow submission directly
+    const hasProof = isZeroFeeRegistration || paymentProofFiles.length > 0 || paymentProofPreviouslyUploaded;
+
+    if (hasProof) {
+        submitBtn.classList.remove('btn-blocked');
+        if (submitNote) submitNote.style.display = 'none';
+    } else {
+        submitBtn.classList.add('btn-blocked');
+        if (submitNote) submitNote.style.display = 'block';
+    }
+}
+
+// Update Step 1 payment instructions and invoice button label when total fee is 0
+function _updateStep1ForFreeReg(isFree) {
+    const btn = document.getElementById('btn-download-invoice');
+    const existingNotice = document.getElementById('step1-free-notice');
+
+    if (isFree) {
+        if (btn) {
+            btn.innerHTML = `<i class='bx bx-check-circle'></i> Get Registration Confirmation &amp; Reference ID`;
+        }
+        if (!existingNotice) {
+            const wrapper = document.getElementById('invoice-download-wrapper');
+            if (wrapper) {
+                const notice = document.createElement('div');
+                notice.id = 'step1-free-notice';
+                notice.style.cssText = 'margin-bottom:12px;padding:12px 16px;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.3);border-radius:8px;display:flex;align-items:center;gap:10px;';
+                notice.innerHTML = `<i class='bx bx-check-shield' style="font-size:1.4rem;color:#4ade80;flex-shrink:0;"></i><div><div style="color:#4ade80;font-weight:600;font-size:0.92rem;">No Payment Required</div><div style="color:var(--text-muted);font-size:0.84rem;margin-top:2px;">Your selected registration is at no cost. Download your confirmation, then submit below.</div></div>`;
+                wrapper.insertAdjacentElement('beforebegin', notice);
+            }
+        }
+    } else {
+        if (btn) {
+            btn.innerHTML = `<i class='bx bxs-file-pdf'></i> Download Proforma Invoice &amp; Get Reference ID`;
+        }
+        existingNotice?.remove();
+    }
+}
+
+// Configure Step 2 section for free vs paid registration
+function _setupStep2(isFree) {
+    const step2 = document.getElementById('step2-section');
+    if (!step2) return;
+    step2.classList.remove('hidden');
+
+    const payBox   = step2.querySelector('.highlight-box');
+    const proofRow = document.getElementById('paymentProof')?.closest('.form-group.row');
+
+    if (isFree) {
+        if (payBox)   payBox.style.display   = 'none';
+        if (proofRow) proofRow.style.display = 'none';
+
+        if (!document.getElementById('step2-free-notice')) {
+            const formActions = step2.querySelector('.form-actions');
+            if (formActions) {
+                const notice = document.createElement('div');
+                notice.id = 'step2-free-notice';
+                notice.style.cssText = 'margin-bottom:16px;padding:14px 18px;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.3);border-radius:8px;';
+                notice.innerHTML = `<div style="display:flex;align-items:flex-start;gap:10px;"><i class='bx bx-check-shield' style="font-size:1.5rem;color:#4ade80;flex-shrink:0;margin-top:2px;"></i><div><div style="color:#4ade80;font-weight:700;font-size:0.95rem;margin-bottom:4px;">No Payment Required</div><div style="color:var(--text-muted);font-size:0.87rem;line-height:1.6;">Your selected workshop has a <strong style="color:var(--text-light);">100% student discount</strong> — there is nothing to pay. Click <strong style="color:var(--text-light);">Submit Registration</strong> below to complete your registration.</div></div></div>`;
+                formActions.insertAdjacentElement('beforebegin', notice);
+            }
+        }
+    } else {
+        if (payBox)   payBox.style.display   = '';
+        if (proofRow) proofRow.style.display = '';
+        document.getElementById('step2-free-notice')?.remove();
+    }
+    updateSubmitButtonState();
+}
+
+// ---- REFERENCE ID HELPERS ----
+
+function showRefId(refId) {
+    const el = document.getElementById('reg-ref-id');
+    if (el) el.textContent = refId;
+    const btn = document.getElementById('btn-copy-ref');
+    if (btn) btn.style.display = '';
+    const hint = document.getElementById('ref-id-hint');
+    if (hint) hint.textContent = 'Save this ID — you need it to reload your registration or make payment.';
+}
+
+function copyRefId() {
+    const refId = document.getElementById('reg-ref-id')?.textContent?.trim();
+    if (!refId || refId === '—') return;
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(refId).then(() => showToast('Reference ID copied!', 'success')).catch(() => fallbackCopy(refId));
+    } else {
+        fallbackCopy(refId);
+    }
+}
+
+function fallbackCopy(text) {
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.select();
+    try { document.execCommand('copy'); showToast('Reference ID copied!', 'success'); } catch (_) {}
+    document.body.removeChild(el);
+}
+
+// ---- INAUGURATION HELPERS ----
+function showInauguration() {
+    const s = document.getElementById('inauguration-section');
+    const hasInaugFee = (appSettings.inauguration_fee > 0) || ((appSettings.inauguration_fee_usd || 0) > 0);
+    if (s && hasInaugFee) s.classList.remove('hidden');
+}
+function hideInauguration() {
+    const s = document.getElementById('inauguration-section');
+    if (s) {
+        s.classList.add('hidden');
+        const chk = document.getElementById('includeInauguration');
+        if (chk) chk.checked = false;
+    }
+}
+
+// ---- FLEXIBLE CATEGORIES SETTINGS ----
+function renderCategoriesAdmin() {
+    const list = document.getElementById('categories-list');
+    if (!list) return;
+    list.innerHTML = '';
+    (appSettings.categories || []).forEach((cat, idx) => {
+        const div = document.createElement('div');
+        div.className = 'category-entry form-group';
+        div.dataset.itemId = cat.id;
+        const isWO = cat.is_workshop_only || false;
+        const feeStyle = isWO ? 'opacity:0.38;pointer-events:none;' : '';
+        const feeNote  = isWO ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-top:3px;line-height:1.2;">Charged per<br>workshop</div>` : '';
+        div.style.cssText = 'display:grid;grid-template-columns:1fr 100px 100px 100px auto 36px;gap:8px;align-items:end;margin-bottom:8px;';
+        div.innerHTML = `
+            <div class="input-field"><label>Label</label><input type="text" class="cat-label" value="${cat.label}" required></div>
+            <div class="input-field" style="${feeStyle}"><label>Local (LKR)</label><input type="number" class="cat-fee-local" value="${cat.fee_local}" ${isWO ? 'disabled tabindex="-1"' : ''}>${feeNote}</div>
+            <div class="input-field" style="${feeStyle}"><label>SAARC (USD)</label><input type="number" class="cat-fee-saarc" value="${cat.fee_saarc}" ${isWO ? 'disabled tabindex="-1"' : ''}></div>
+            <div class="input-field" style="${feeStyle}"><label>Non-SAARC (USD)</label><input type="number" class="cat-fee-nonsaarc" value="${cat.fee_nonsaarc}" ${isWO ? 'disabled tabindex="-1"' : ''}></div>
+            <div style="display:flex;flex-direction:column;gap:4px;justify-content:flex-end;padding-bottom:4px;">
+                <label style="display:flex;align-items:center;gap:5px;font-size:0.8rem;cursor:pointer;white-space:nowrap;">
+                    <input type="checkbox" class="cat-is-student" ${cat.is_student ? 'checked' : ''}> Student type
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:0.8rem;cursor:pointer;white-space:nowrap;">
+                    <input type="checkbox" class="cat-no-papers" ${cat.no_papers ? 'checked' : ''}> No papers
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:0.8rem;cursor:pointer;white-space:nowrap;" title="Eligible for multi-paper submission discount">
+                    <input type="checkbox" class="cat-paper-discount" ${cat.paper_discount ? 'checked' : ''}> Paper discount
+                </label>
+                <label style="display:flex;align-items:center;gap:5px;font-size:0.8rem;cursor:pointer;white-space:nowrap;" title="Fee is charged per workshop, not as a flat registration fee">
+                    <input type="checkbox" class="cat-is-workshop-only" ${isWO ? 'checked' : ''}> Workshop-only
+                </label>
+            </div>
+            <button type="button" class="btn-remove-journal" onclick="removeCategory(${idx})" title="Remove"><i class='bx bx-trash'></i></button>
+        `;
+        list.appendChild(div);
+    });
+}
+
+window.removeCategory = function(idx) {
+    appSettings.categories.splice(idx, 1);
+    renderCategoriesAdmin();
+    rebuildCategoryDropdown();
+};
+
+function addCategoryField() {
+    if (!appSettings.categories) appSettings.categories = [];
+    appSettings.categories.push({ id: 'cat_' + Date.now(), label: '', fee_local: 0, fee_saarc: 0, fee_nonsaarc: 0, is_student: false, no_papers: false, paper_discount: false, is_workshop_only: false });
+    renderCategoriesAdmin();
+}
+
+function saveCategoriesFromAdmin() {
+    const rows = document.querySelectorAll('#categories-list .category-entry');
+    const cats = [];
+    rows.forEach((row, i) => {
+        const label = row.querySelector('.cat-label')?.value.trim();
+        if (!label) return;
+        const isWO = row.querySelector('.cat-is-workshop-only')?.checked || false;
+        cats.push({
+            id:               row.dataset.itemId || 'cat_' + Date.now() + '_' + i,
+            label,
+            fee_local:        isWO ? 0 : (Number(row.querySelector('.cat-fee-local')?.value)    || 0),
+            fee_saarc:        isWO ? 0 : (Number(row.querySelector('.cat-fee-saarc')?.value)    || 0),
+            fee_nonsaarc:     isWO ? 0 : (Number(row.querySelector('.cat-fee-nonsaarc')?.value) || 0),
+            is_student:       row.querySelector('.cat-is-student')?.checked    || false,
+            no_papers:        row.querySelector('.cat-no-papers')?.checked      || false,
+            paper_discount:   row.querySelector('.cat-paper-discount')?.checked || false,
+            is_workshop_only: isWO,
+        });
+    });
+    appSettings.categories = cats;
+    rebuildCategoryDropdown();
+}
+
+function rebuildCategoryDropdown() {
+    applyPreconfVisibility();
+}
+
+function applyPreconfVisibility() {
+    const hidden = appSettings.preconf_workshops_hidden || false;
+    const togglePreConf = document.getElementById('togglePreConf');
+    if (togglePreConf) {
+        const container = togglePreConf.closest('.form-checkbox');
+        if (container) {
+            if (hidden) {
+                container.classList.add('hidden');
+                togglePreConf.checked = false;
+                normalizeSectionToggleState(togglePreConf);
+            } else {
+                container.classList.remove('hidden');
+            }
+        }
+    }
+    const sharedSess = document.getElementById('section-preconf-sessions');
+    if (sharedSess) {
+        if (hidden) {
+            sharedSess.classList.add('hidden');
+        } else {
+            const mainOn    = document.getElementById('toggleMain')?.checked;
+            const preconfOn = togglePreConf?.checked;
+            const hasSessions = (appSettings.pre_conference_sessions || []).some(workshopIsAvailable);
+            if ((mainOn || preconfOn) && hasSessions) sharedSess.classList.remove('hidden');
+            else sharedSess.classList.add('hidden');
+        }
+    }
+
+    const sel = document.getElementById('attendeeCategory');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="" disabled selected>Select Category</option>';
+    (appSettings.categories || []).forEach(cat => {
+        if (hidden && cat.is_workshop_only) return;
+        const opt = document.createElement('option');
+        opt.value = cat.label;
+        opt.textContent = cat.label;
+        opt.dataset.categoryId = cat.id;
+        if (cat.label === cur) opt.selected = true;
+        sel.appendChild(opt);
+    });
+}
+
+// ---- PRE-CONFERENCE SESSIONS SETTINGS ----
+function renderSessionsAdmin() {
+    const list = document.getElementById('sessions-list');
+    if (!list) return;
+    list.innerHTML = '';
+    (appSettings.pre_conference_sessions || []).forEach((sess, idx) => {
+        const div = document.createElement('div');
+        div.className = 'session-entry form-group';
+        div.dataset.itemId = sess.id;
+        div.style.cssText = 'display:grid;grid-template-columns:2fr 135px 90px 90px 90px 70px 70px 36px;gap:8px;align-items:end;margin-bottom:8px;';
+        div.innerHTML = `
+            <div class="input-field"><label>Workshop Name</label><input type="text" class="sess-name" value="${sess.name}" required></div>
+            <div class="input-field"><label>Event Date</label><input type="date" class="sess-event-date" value="${sess.event_date || ''}" required></div>
+            <div class="input-field"><label>Local (LKR)</label><input type="number" class="sess-fee-local" value="${sess.fee_local}" required></div>
+            <div class="input-field"><label>SAARC (USD)</label><input type="number" class="sess-fee-saarc" value="${sess.fee_saarc}" required></div>
+            <div class="input-field"><label>Non-SAARC (USD)</label><input type="number" class="sess-fee-nonsaarc" value="${sess.fee_nonsaarc}" required></div>
+            <div class="input-field"><label>Academic %</label><input type="number" class="sess-academic-pct" value="${sess.academic_discount_pct || 0}" min="0" max="100"></div>
+            <div class="input-field"><label>Student %</label><input type="number" class="sess-student-pct" value="${sess.student_discount_pct || 0}" min="0" max="100"></div>
+            <button type="button" class="btn-remove-journal" onclick="removeSession(${idx})" title="Remove"><i class='bx bx-trash'></i></button>
+        `;
+        list.appendChild(div);
+    });
+}
+
+window.removeSession = function(idx) {
+    appSettings.pre_conference_sessions.splice(idx, 1);
+    renderSessionsAdmin();
+    rebuildSessionCheckboxes();
+};
+
+function addSessionField() {
+    if (!appSettings.pre_conference_sessions) appSettings.pre_conference_sessions = [];
+    appSettings.pre_conference_sessions.push({ id: 'sess_' + Date.now(), name: '', event_date: '', fee_local: 0, fee_saarc: 0, fee_nonsaarc: 0, academic_discount_pct: 0, student_discount_pct: 0 });
+    renderSessionsAdmin();
+}
+
+function saveSessionsFromAdmin() {
+    const rows = document.querySelectorAll('#sessions-list .session-entry');
+    const sessions = [];
+    rows.forEach((row, i) => {
+        const name = row.querySelector('.sess-name')?.value.trim();
+        if (name) {
+            sessions.push({
+                id: row.dataset.itemId || 'sess_' + Date.now() + '_' + i,
+                name,
+                event_date: row.querySelector('.sess-event-date')?.value || '',
+                fee_local:             Number(row.querySelector('.sess-fee-local')?.value) || 0,
+                fee_saarc:             Number(row.querySelector('.sess-fee-saarc')?.value) || 0,
+                fee_nonsaarc:          Number(row.querySelector('.sess-fee-nonsaarc')?.value) || 0,
+                academic_discount_pct: Number(row.querySelector('.sess-academic-pct')?.value) || 0,
+                student_discount_pct:  Number(row.querySelector('.sess-student-pct')?.value) || 0
+            });
+        }
+    });
+    appSettings.pre_conference_sessions = sessions;
+    rebuildSessionCheckboxes();
+}
+
+function rebuildSessionCheckboxes() {
+    const container = document.getElementById('preconf-sessions-container');
+    if (!container) return;
+    const sessions = (appSettings.pre_conference_sessions || []).filter(workshopIsAvailable);
+    if (sessions.length === 0) {
+        container.innerHTML = '';
+        container.closest('#preconf-sessions-section')?.classList.add('hidden');
+        document.getElementById('section-preconf-sessions')?.classList.add('hidden');
+        return;
+    }
+    container.closest('#preconf-sessions-section')?.classList.remove('hidden');
+    container.innerHTML = '';
+    sessions.forEach(sess => {
+        const div = document.createElement('div');
+        div.className = 'form-checkbox mb-2';
+        div.innerHTML = `
+            <input type="checkbox" id="sess_${sess.id}" name="PreConf_${sess.id}" class="preconf-session-check price-trigger" data-sess-id="${sess.id}">
+            <label for="sess_${sess.id}">${sess.name}${sess.event_date ? ' — ' + sess.event_date : ''}</label>
+        `;
+        container.appendChild(div);
+    });
+    // Re-attach price-trigger listeners
+    container.querySelectorAll('.price-trigger').forEach(el => {
+        el.addEventListener('change', () => {
+            // Auto-enable the Pre-Conference toggle so the session fee is counted when
+            // a session is checked while only Main Conference is toggled.
+            if (el.checked && !document.getElementById('togglePreConf')?.checked) {
+                const toggle = document.getElementById('togglePreConf');
+                if (toggle) { toggle.checked = true; toggle.dispatchEvent(new Event('change')); }
+            }
+            _updateWorkshopDiscountVisibility();
+            calculateTotalFee();
+        });
+    });
+}
+
+function currentColomboDate() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Colombo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+function workshopIsAvailable(item) { return item?.active !== false && (!item?.event_date || item.event_date >= currentColomboDate()); }
+function rebuildConferenceWorkshopCheckboxes() {
+    const container = document.getElementById('conference-workshops-container');
+    const row = document.getElementById('conference-workshops-toggle-row');
+    if (!container || !row) return;
+    const items = (appSettings.conference_workshops || []).filter(workshopIsAvailable);
+    row.classList.toggle('hidden', items.length === 0);
+    if (!items.length) {
+        container.innerHTML = '';
+        document.getElementById('section-conference-workshops')?.classList.add('hidden');
+        const toggle = document.getElementById('toggleConferenceWorkshops'); if (toggle) toggle.checked = false;
+        return;
+    }
+    container.innerHTML = items.map(item => `<div class="form-checkbox mb-2"><input type="checkbox" id="cw_${item.id}" name="Conference_Workshop_${item.id}" class="conference-workshop-check" data-workshop-id="${item.id}"><label for="cw_${item.id}">${escHtml(item.name)}${item.event_date ? ' — ' + item.event_date : ''}</label></div>`).join('');
+}
+function renderConferenceWorkshopsAdmin() {
+    const list = document.getElementById('conference-workshops-list'); if (!list) return;
+    list.innerHTML = (appSettings.conference_workshops || []).map((item, idx) => `<div class="conference-workshop-entry form-group" data-item-id="${item.id}" style="display:grid;grid-template-columns:2fr 150px 90px 36px;gap:8px;align-items:end;margin-bottom:8px"><div class="input-field"><label>Workshop Name</label><input class="conference-workshop-name" value="${item.name || ''}" required></div><div class="input-field"><label>Event Date</label><input type="date" class="conference-workshop-date" value="${item.event_date || ''}" required></div><label style="padding-bottom:10px"><input type="checkbox" class="conference-workshop-active" ${item.active !== false ? 'checked' : ''}> Active</label><button type="button" class="btn-remove-journal" onclick="removeConferenceWorkshop(${idx})"><i class='bx bx-trash'></i></button></div>`).join('');
+}
+function addConferenceWorkshopField() { appSettings.conference_workshops ||= []; appSettings.conference_workshops.push({ id: 'cw_' + Date.now(), name: '', event_date: '', active: true }); renderConferenceWorkshopsAdmin(); }
+window.removeConferenceWorkshop = function(idx) { appSettings.conference_workshops.splice(idx, 1); renderConferenceWorkshopsAdmin(); };
+function saveConferenceWorkshopsFromAdmin() {
+    appSettings.conference_workshops = Array.from(document.querySelectorAll('.conference-workshop-entry')).map((row, i) => ({ id: row.dataset.itemId || 'cw_' + Date.now() + '_' + i, name: row.querySelector('.conference-workshop-name').value.trim(), event_date: row.querySelector('.conference-workshop-date').value, active: row.querySelector('.conference-workshop-active').checked })).filter(item => item.name);
+}
+
+// ---- AWARD & EXCURSION DROPDOWN REBUILDERS ----
+
+function rebuildAwardCategoryDropdown() {
+    const sel = document.getElementById('awardCategory');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="" disabled selected>Select Category</option>';
+    (appSettings.award_categories || []).forEach(cat => {
+        const opt = document.createElement('option');
+        opt.value = cat; opt.textContent = cat;
+        if (cat === cur) opt.selected = true;
+        sel.appendChild(opt);
+    });
+}
+
+function rebuildAwardPurposeDropdown() {
+    const sel = document.getElementById('primaryReason');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="" disabled selected>Select Purpose</option>';
+    (appSettings.award_purposes || []).forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p; opt.textContent = p;
+        if (p === cur) opt.selected = true;
+        sel.appendChild(opt);
+    });
+}
+
+function rebuildExcursionMobilityDropdown() {
+    const sel = document.getElementById('excrMobility');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '';
+    (appSettings.excursion_mobility_options || []).forEach((opt, i) => {
+        const el = document.createElement('option');
+        el.value = opt; el.textContent = opt;
+        if (opt === cur || (i === 0 && !cur)) el.selected = true;
+        sel.appendChild(el);
+    });
+}
+
+function rebuildExcursionActivityDropdown() {
+    const sel = document.getElementById('excrShopping');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '';
+    (appSettings.excursion_activity_options || []).forEach((opt, i) => {
+        const el = document.createElement('option');
+        el.value = opt; el.textContent = opt;
+        if (opt === cur || (i === 0 && !cur)) el.selected = true;
+        sel.appendChild(el);
+    });
+}
+
+// ---- AWARD & EXCURSION ADMIN SETTINGS ----
+
+function _renderSimpleList(listId, items, cssClass) {
+    const list = document.getElementById(listId);
+    if (!list) return;
+    list.innerHTML = '';
+    items.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px;';
+        div.innerHTML = `
+            <input type="text" class="${cssClass}" value="${item.replace(/"/g, '&quot;')}" style="flex:1;padding:7px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:var(--text-light);font-size:0.88rem;">
+            <button type="button" class="btn-remove-journal" onclick="removeSimpleListItem('${listId}','${cssClass}',${idx})"><i class='bx bx-trash'></i></button>
+        `;
+        list.appendChild(div);
+    });
+}
+
+window.removeSimpleListItem = function(listId, cssClass, idx) {
+    const list = document.getElementById(listId);
+    if (!list) return;
+    const items = [...list.querySelectorAll('.' + cssClass)].map(i => i.value.trim()).filter(Boolean);
+    items.splice(idx, 1);
+    list.innerHTML = '';
+    items.forEach((item, i) => {
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px;';
+        div.innerHTML = `
+            <input type="text" class="${cssClass}" value="${item.replace(/"/g, '&quot;')}" style="flex:1;padding:7px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:var(--text-light);font-size:0.88rem;">
+            <button type="button" class="btn-remove-journal" onclick="removeSimpleListItem('${listId}','${cssClass}',${i})"><i class='bx bx-trash'></i></button>
+        `;
+        list.appendChild(div);
+    });
+};
+
+window.addSimpleListItem = function(listId, cssClass) {
+    const list = document.getElementById(listId);
+    if (!list) return;
+    const count = list.querySelectorAll('.' + cssClass).length;
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px;';
+    div.innerHTML = `
+        <input type="text" class="${cssClass}" value="" style="flex:1;padding:7px 10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);border-radius:6px;color:var(--text-light);font-size:0.88rem;" placeholder="Enter option">
+        <button type="button" class="btn-remove-journal" onclick="removeSimpleListItem('${listId}','${cssClass}',${count})"><i class='bx bx-trash'></i></button>
+    `;
+    list.appendChild(div);
+};
+
+function renderAwardOptionsAdmin() {
+    _renderSimpleList('award-categories-list', appSettings.award_categories || [], 'award-category-item');
+    _renderSimpleList('award-purposes-list',   appSettings.award_purposes   || [], 'award-purpose-item');
+}
+
+function renderExcursionOptionsAdmin() {
+    _renderSimpleList('excursion-mobility-list', appSettings.excursion_mobility_options || [], 'mobility-item');
+    _renderSimpleList('excursion-activity-list', appSettings.excursion_activity_options || [], 'activity-item');
+}
+
+function saveAwardOptionsFromAdmin() {
+    const cats  = document.querySelectorAll('#award-categories-list .award-category-item');
+    const purps = document.querySelectorAll('#award-purposes-list .award-purpose-item');
+    appSettings.award_categories = [...cats].map(i => i.value.trim()).filter(Boolean);
+    appSettings.award_purposes   = [...purps].map(i => i.value.trim()).filter(Boolean);
+}
+
+function saveExcursionOptionsFromAdmin() {
+    const mob = document.querySelectorAll('#excursion-mobility-list .mobility-item');
+    const act = document.querySelectorAll('#excursion-activity-list .activity-item');
+    appSettings.excursion_mobility_options = [...mob].map(i => i.value.trim()).filter(Boolean);
+    appSettings.excursion_activity_options = [...act].map(i => i.value.trim()).filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// Settings resolution — Google Drive is the single source of truth
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge stored settings onto a fresh copy of defaultSettings.
+ * - defaultSettings provides the complete schema; any new field added to
+ *   defaultSettings will automatically appear in the merged output even if
+ *   the stored version pre-dates it.
+ * - Stored values win for every key that exists in both (Drive/localStorage
+ *   values are never silently discarded).
+ * - Arrays are taken whole from the stored version (we don't try to merge
+ *   array contents), except for categories[] where per-item flags are
+ *   filled-in individually for backward compatibility.
+ * - Plain nested objects (discounts, conf_fees, excursion_fees …) are
+ *   merged one level deep so new sub-keys get their default value.
+ */
+function mergeWithDefaults(stored) {
+    const base = JSON.parse(JSON.stringify(defaultSettings)); // fresh schema
+    if (!stored || typeof stored !== 'object') return base;
+
+    for (const key of Object.keys(stored)) {
+        if (key === 'categories') {
+            // Per-item flag migration: fill missing flags without losing stored fees/labels
+            base.categories = (stored.categories || []).map(cat => ({
+                is_student:       false,
+                no_papers:        false,
+                paper_discount:   false,
+                is_workshop_only: false,
+                ...cat,
+                paper_discount: 'paper_discount' in cat ? cat.paper_discount : (cat.is_student || false)
+            }));
+        } else if (key === 'pre_conference_sessions') {
+            // Migration: ensure discount pct fields exist in older stored sessions
+            base.pre_conference_sessions = (stored.pre_conference_sessions || []).map(sess => ({
+                academic_discount_pct: 0,
+                student_discount_pct:  0,
+                ...sess
+            }));
+        } else if (key === 'journals') {
+            // Older settings did not distinguish a genuine zero fee from APC
+            // being structurally inapplicable. Preserve old behavior by default.
+            base.journals = (stored.journals || []).map(journal => ({
+                apc_not_applicable: false,
+                ...journal
+            }));
+        } else if (
+            typeof base[key] === 'object' && base[key] !== null && !Array.isArray(base[key]) &&
+            typeof stored[key] === 'object' && stored[key] !== null && !Array.isArray(stored[key])
+        ) {
+            // Nested plain object — shallow merge so new sub-keys get defaults
+            base[key] = { ...base[key], ...stored[key] };
+        } else {
+            base[key] = stored[key];
+        }
+    }
+    return base;
+}
+
+/**
+ * Resolve the authoritative settings before the UI renders.
+ * Priority: Google Drive → localStorage fallback (network failure only).
+ * Public page loads are read-only. Only an authenticated admin save may write
+ * settings; this avoids false Drive errors after token/authentication changes.
+ */
+async function resolveSettings() {
+    const overlay = document.getElementById('settings-loading-overlay');
+
+    if (APPS_SCRIPT_URL && APPS_SCRIPT_URL !== 'YOUR_APPS_SCRIPT_URL_HERE') {
+        try {
+            const controller = new AbortController();
+            const tid = setTimeout(() => controller.abort(), 15000);
+            const resp = await fetch(APPS_SCRIPT_URL + '?action=getSettings', {
+                cache: 'no-store',
+                signal: controller.signal
+            });
+            clearTimeout(tid);
+
+            if (resp.ok) {
+                const json = await resp.json();
+
+                if (json.success && json.settings) {
+                    // Merge Drive settings with current defaultSettings schema
+                    const merged    = mergeWithDefaults(json.settings);
+                    const mergedStr = JSON.stringify(merged);
+                    appSettings = merged;
+                    localStorage.setItem('sicet2026_settings', mergedStr);
+                } else if (json.error === 'No settings file found') {
+                    // Admin must explicitly save defaults; a public visitor has no write authority.
+                    appSettings = mergeWithDefaults({});
+                    localStorage.setItem('sicet2026_settings', JSON.stringify(appSettings));
+                    console.warn('No Drive settings file found; using defaults until an administrator saves settings.');
+                } else {
+                    // Preserve the last confirmed settings rather than silently changing live fees.
+                    throw new Error(json.error || 'Drive settings could not be loaded.');
+                }
+
+                if (overlay) overlay.style.display = 'none';
+                return;
+            }
+        } catch (err) {
+            console.warn('Drive settings fetch failed — falling back to localStorage:', err);
+            showToast('Could not reach Google Drive — using locally cached settings. Fees may differ if settings were recently changed.', 'error');
+        }
+    }
+
+    // Network failure / Drive not configured: fall back to localStorage
+    const stored = readLocalJson('sicet2026_settings');
+    appSettings = mergeWithDefaults(stored || {});
+    localStorage.setItem('sicet2026_settings', JSON.stringify(appSettings));
+    if (overlay) overlay.style.display = 'none';
+}
+
+// Push settings to Google Drive and return the backend confirmation/error.
+async function pushSettingsToDrive(settings) {
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+        return { success: false, error: 'Google Drive backend is not configured.' };
+    }
+    try {
+        const resp = await fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify({ action: 'saveSettings', adminToken, settings })
+        });
+        if (!resp.ok) return { success: false, error: 'Google Drive returned HTTP ' + resp.status + '.' };
+        const json = await resp.json();
+        if (json.error === 'Unauthorized') {
+            adminToken = '';
+            sessionStorage.removeItem('sicet2026_admin_token');
+            return { success: false, error: 'Admin session expired. Sign in again, then retry Save Settings.' };
+        }
+        return json;
+    } catch (err) {
+        console.warn('Could not push settings to Drive:', err);
+        return { success: false, error: 'Could not connect to Google Drive. Your settings were not applied.' };
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp query sender
+// ---------------------------------------------------------------------------
+let waLoadedData       = null;  // set by loadWaRegistration() or populateFormFromData()
+let waDataSource       = null;  // 'widget' | 'form' — tracks who last set waLoadedData
+
+const WA_CONTACTS = {
+    preconf: { name: 'Dr. Nandika Miguntanna',      number: '94718548966', role: 'Pre-Conference Workshops Chair' },
+    award:   { name: 'Ms. Angel Shanali Oshaji',    number: '94760255850', role: 'Excellence Award Coordinator' },
+    payment: { name: 'Dr. Gayashika Fernando',      number: '94777402892', role: 'Registration Chair' },
+    technical: { name: 'Pramuditha Coomasaru',      number: '94777728081', role: 'Technical Support — Registration System' },
+    general: { name: 'Mr. Sudara Withana',          number: '94774014463', role: 'Conference Co-Secretary' },
+    other:   { name: 'Dr. Gayashika Fernando',      number: '94777402892', role: 'Registration Chair' }
+};
+
+function gatherWaContext() {
+    // If a registration was loaded (via widget lookup or main form lookup), prefer that data
+    if (waLoadedData) {
+        const refId   = (waLoadedData.Invoice_ID || '').trim();
+        const email   = (waLoadedData.Email       || '').trim();
+        const nPapers = parseInt(waLoadedData.Number_of_Papers) || 0;
+        const papers  = [];
+        for (let i = 1; i <= nPapers; i++) {
+            const pid   = (waLoadedData[`Paper_${i}_ID`]    || '').trim();
+            const title = (waLoadedData[`Paper_${i}_Title`] || '').trim();
+            if (pid || title) papers.push(pid && title ? `[${pid}] ${title}` : (title || pid));
+        }
+        return { refId, email, papers };
+    }
+
+    // Fall back to reading from the main registration form
+    const refId   = (document.getElementById('reg-ref-id')?.textContent || '').trim();
+    const email   = (document.getElementById('email')?.value            || '').trim();
+    const nPapers = parseInt(document.getElementById('numberOfPapers')?.value) || 0;
+    const papers  = [];
+    for (let i = 1; i <= nPapers; i++) {
+        const pid   = (document.getElementById(`paperId_${i}`)?.value    || '').trim();
+        const title = (document.getElementById(`paperTitle_${i}`)?.value || '').trim();
+        if (pid || title) papers.push(pid && title ? `[${pid}] ${title}` : (title || pid));
+    }
+    return { refId: refId !== '—' ? refId : '', email, papers };
+}
+
+async function loadWaRegistration() {
+    const refId = (document.getElementById('wa-ref-lookup')?.value || '').trim();
+    const lookupEmail = (document.getElementById('wa-ref-email')?.value || '').trim();
+    if (!refId || !lookupEmail) { showToast('Please enter your Reference ID and registration email.', 'error'); return; }
+    if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+        showToast('Google Drive not configured.', 'error'); return;
+    }
+
+    const btn = document.getElementById('btn-wa-load-ref');
+    const statusDiv = document.getElementById('wa-ref-status');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bx bx-loader bx-spin"></i>'; }
+    if (statusDiv) statusDiv.style.display = 'none';
+
+    try {
+        const url = APPS_SCRIPT_URL + '?action=getRegistrationByRef&ref=' + encodeURIComponent(refId) + '&email=' + encodeURIComponent(lookupEmail);
+        const res  = await fetch(url);
+        const result = await res.json();
+
+        if (!result.success || !result.data) {
+            if (statusDiv) {
+                statusDiv.innerHTML = `<span style="color:#ff6b6b;display:flex;align-items:center;gap:6px;"><i class='bx bx-error-circle'></i> Not found — please check your Reference ID.</span>`;
+                statusDiv.style.display = 'block';
+            }
+            waLoadedData = null;
+            return;
+        }
+
+        waLoadedData = result.data;
+        waDataSource = 'widget';
+
+        // Fill widget fields and main form fields unconditionally
+        const _wn = document.getElementById('wa-name');
+        const _wm = document.getElementById('wa-mobile');
+        const _fn = document.getElementById('fullName');
+        const _ph = document.getElementById('phone');
+        if (result.data.Full_Name) { if (_wn) _wn.value = result.data.Full_Name; if (_fn) _fn.value = result.data.Full_Name; }
+        if (result.data.Phone)     { if (_wm) _wm.value = result.data.Phone;     if (_ph) _ph.value = result.data.Phone;     }
+
+        if (statusDiv) {
+            statusDiv.innerHTML = `<span style="color:#25d366;display:flex;align-items:center;gap:6px;"><i class='bx bx-check-circle'></i> Loaded: <strong>${result.data.Full_Name || refId}</strong></span>`;
+            statusDiv.style.display = 'block';
+        }
+
+        refreshWaContextBox();
+        renderWaPreview();
+        showToast(`Details loaded for ${result.data.Full_Name || refId}`, 'success');
+    } catch (_) {
+        showToast('Could not connect. Please check your connection and try again.', 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bx bx-search"></i> Load'; }
+    }
+}
+
+function onWaRefInput() {
+    const val = (document.getElementById('wa-ref-lookup')?.value || '').trim();
+    if (!val) {
+        // Only clear waLoadedData if it was loaded via the widget itself.
+        // If it was set by the main-form ref lookup, keep it so the paper picker
+        // (and context box) continue to show the correct registration data.
+        if (waDataSource === 'widget') {
+            waLoadedData = null;
+            waDataSource = null;
+        }
+        const statusDiv = document.getElementById('wa-ref-status');
+        if (statusDiv) statusDiv.style.display = 'none';
+        refreshWaContextBox();
+    }
+    renderWaPreview();
+}
+
+function refreshWaContextBox() {
+    const box = document.getElementById('wa-reg-context');
+    if (!box) return;
+    const ctx = gatherWaContext();
+    const rows = [];
+    if (ctx.refId) rows.push(`<div style="display:flex;gap:6px;"><span style="color:var(--text-muted);min-width:110px;font-size:0.82rem;">Reference ID</span><span style="color:var(--text-light);font-size:0.82rem;font-weight:600;font-family:monospace;">${ctx.refId}</span></div>`);
+    if (ctx.email) rows.push(`<div style="display:flex;gap:6px;"><span style="color:var(--text-muted);min-width:110px;font-size:0.82rem;">Email</span><span style="color:var(--text-light);font-size:0.82rem;">${ctx.email}</span></div>`);
+
+    if (!rows.length) { box.style.display = 'none'; }
+    else {
+        box.innerHTML = `
+            <div style="padding:10px 14px;background:rgba(74,104,255,0.07);border:1px solid rgba(74,104,255,0.25);border-radius:10px;">
+                <p style="margin:0 0 8px;font-size:0.8rem;color:#4a9eff;font-weight:600;display:flex;align-items:center;gap:5px;">
+                    <i class='bx bx-link-alt'></i> Auto-detected from your registration
+                </p>
+                <div style="display:flex;flex-direction:column;gap:4px;">${rows.join('')}</div>
+            </div>`;
+        box.style.display = 'block';
+    }
+
+    // Refresh paper picker if currently visible
+    const paperSection = document.getElementById('wa-paper-section');
+    if (paperSection && paperSection.style.display !== 'none') renderWaPaperPicker();
+
+    renderWaPreview();
+}
+
+function updateWhatsAppContact() {
+    // Sync ref ID from main form → widget lookup field (bidirectional link)
+    const waRefLookup = document.getElementById('wa-ref-lookup');
+    const formRefId   = (document.getElementById('reg-ref-id')?.textContent || '').trim();
+    if (waRefLookup && !waRefLookup.value && formRefId && formRefId !== '—') {
+        waRefLookup.value = formRefId;
+    }
+
+    // Auto-fill name/mobile from main registration form if not already entered
+    const waName   = document.getElementById('wa-name');
+    const waMobile = document.getElementById('wa-mobile');
+    if (waName   && !waName.value)   waName.value   = document.getElementById('fullName')?.value || '';
+    if (waMobile && !waMobile.value) waMobile.value = document.getElementById('phone')?.value    || '';
+
+    // Refresh registration context box
+    refreshWaContextBox();
+
+    const type    = document.getElementById('wa-issue-type')?.value || '';
+    const contact = WA_CONTACTS[type] || WA_CONTACTS.other;
+
+    // Show/hide workshop selector
+    const workshopsSection = document.getElementById('wa-workshops-section');
+    if (workshopsSection) {
+        if (type === 'preconf') {
+            renderWhatsAppWorkshops();
+            workshopsSection.style.display = 'block';
+        } else {
+            workshopsSection.style.display = 'none';
+        }
+    }
+
+    // Show/hide award category selector
+    const awardSection = document.getElementById('wa-award-section');
+    if (awardSection) {
+        if (type === 'award') {
+            renderWaAwardCategory();
+            awardSection.style.display = 'block';
+        } else {
+            awardSection.style.display = 'none';
+        }
+    }
+
+    // Paper picker: only relevant for registration/payment and general conference queries
+    const paperSection = document.getElementById('wa-paper-section');
+    if (paperSection) {
+        if (type === 'payment' || type === 'general') {
+            renderWaPaperPicker();
+            paperSection.style.display = 'block';
+        } else {
+            paperSection.style.display = 'none';
+        }
+    }
+
+    renderWaPreview();
+}
+
+function renderWhatsAppWorkshops() {
+    const container = document.getElementById('wa-workshops-list');
+    if (!container) return;
+    const sessions = appSettings.pre_conference_sessions || [];
+    if (!sessions.length) {
+        container.innerHTML = '<p style="color:var(--text-muted);font-size:0.83rem;margin:0;">No workshops configured yet.</p>';
+        return;
+    }
+    container.innerHTML = sessions.map(s => `
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 8px;border-radius:6px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);">
+            <input type="checkbox" class="wa-workshop-cb" value="${s.name}" onchange="renderWaPreview()" style="accent-color:var(--accent);width:15px;height:15px;flex-shrink:0;">
+            <span style="font-size:0.86rem;color:var(--text-light);">${s.name}</span>
+        </label>
+    `).join('');
+}
+
+function renderWaAwardCategory() {
+    const sel = document.getElementById('wa-award-category');
+    if (!sel) return;
+    const cats = appSettings.award_categories || [];
+    const current = sel.value;
+    if (!cats.length) {
+        sel.innerHTML = '<option value="">No award categories configured</option>';
+        return;
+    }
+    sel.innerHTML = '<option value="">Select award category…</option>' +
+        cats.map(c => `<option value="${c}"${c === current ? ' selected' : ''}>${c}</option>`).join('');
+}
+
+function renderWaPaperPicker() {
+    const sel = document.getElementById('wa-paper-select');
+    if (!sel) return;
+    const ctx = gatherWaContext();
+    const current = sel.value;
+    if (!ctx.papers.length) {
+        sel.innerHTML = '<option value="">Not specific to a paper</option>';
+    } else {
+        const allOpt = ctx.papers.length > 1
+            ? `<option value="__all__"${'__all__' === current ? ' selected' : ''}>All my papers (${ctx.papers.length})</option>`
+            : '';
+        sel.innerHTML = '<option value="">Not specific to a paper</option>' +
+            allOpt +
+            ctx.papers.map((p, i) => `<option value="${p}"${p === current ? ' selected' : ''}>Paper ${i + 1}: ${p}</option>`).join('');
+    }
+}
+
+function buildWaMessage() {
+    const name   = (document.getElementById('wa-name')?.value   || '').trim();
+    const mobile = (document.getElementById('wa-mobile')?.value || '').trim();
+    const type   = document.getElementById('wa-issue-type')?.value || '';
+    const issue  = (document.getElementById('wa-issue')?.value   || '').trim();
+    const ctx    = gatherWaContext();
+    const contact = WA_CONTACTS[type] || WA_CONTACTS.other;
+
+    const sel = document.getElementById('wa-issue-type');
+    const issueTypeLabel = (sel && sel.selectedIndex >= 0 && sel.value) ? sel.options[sel.selectedIndex].text : '';
+
+    const div = '──────────────────';
+    const lines = [`Query — SICET 2026`, div];
+
+    // Always: name and mobile
+    if (name)   lines.push(`Name   : ${name}`);
+    if (mobile) lines.push(`Mobile : ${mobile}`);
+
+    // Type-specific header fields
+    if (type === 'preconf') {
+        // Pre-Conference Workshops: ref ID is key for workshop check-in lookup
+        if (ctx.refId) lines.push(`Ref ID : ${ctx.refId}`);
+
+    } else if (type === 'award') {
+        // Excellence Award: ref ID for cross-reference
+        if (ctx.refId) lines.push(`Ref ID : ${ctx.refId}`);
+
+    } else if (type === 'payment') {
+        // Registration & Payment: need email + ref for tracing transactions
+        if (ctx.email) lines.push(`Email  : ${ctx.email}`);
+        if (ctx.refId) lines.push(`Ref ID : ${ctx.refId}`);
+
+    } else if (type === 'general' || type === 'technical') {
+        // General/technical queries: include identifiers when available for tracing
+        if (ctx.refId) lines.push(`Ref ID : ${ctx.refId}`);
+        if (ctx.email) lines.push(`Email  : ${ctx.email}`);
+    }
+    // 'other': just name + mobile, no extra identifiers
+
+    lines.push(div);
+    if (issueTypeLabel) lines.push(`Query  : ${issueTypeLabel}`);
+
+    // Type-specific query context
+    if (type === 'preconf') {
+        const workshops = [...document.querySelectorAll('.wa-workshop-cb:checked')].map(cb => cb.value);
+        if (workshops.length) lines.push(`Workshop : ${workshops.join(', ')}`);
+
+    } else if (type === 'award') {
+        const awardCat = (document.getElementById('wa-award-category')?.value || '').trim();
+        if (awardCat) lines.push(`Category : ${awardCat}`);
+
+    } else if (type === 'payment' || type === 'general') {
+        // Include selected paper(s) only if user explicitly picked one
+        const selectedPaper = (document.getElementById('wa-paper-select')?.value || '').trim();
+        if (selectedPaper === '__all__') {
+            ctx.papers.forEach((p, i) => lines.push(`Paper ${i + 1} : ${p}`));
+        } else if (selectedPaper) {
+            lines.push(`Paper  : ${selectedPaper}`);
+        }
+    }
+
+    lines.push(div);
+    if (issue) lines.push(`Issue  : ${issue}`);
+
+    return { lines, type, contact, name, mobile, issue };
+}
+
+function renderWaPreview() {
+    const box = document.getElementById('wa-preview');
+    if (!box) return;
+    const { lines, contact, type, name, issue } = buildWaMessage();
+    if (!name && !issue) { box.style.display = 'none'; return; }
+    const recipientHtml = type
+        ? `<p style="margin:10px 0 0;font-size:0.8rem;color:var(--text-muted);border-top:1px solid rgba(37,211,102,0.15);padding-top:8px;">Will be sent to: <strong style="color:var(--text-light);">${contact.name}</strong> — ${contact.role}</p>`
+        : '';
+    box.innerHTML = `
+        <div style="padding:12px 16px;background:rgba(37,211,102,0.04);border:1px solid rgba(37,211,102,0.2);border-radius:10px;">
+            <p style="margin:0 0 10px;font-size:0.8rem;color:#25d366;font-weight:600;display:flex;align-items:center;gap:5px;">
+                <i class='bx bx-show'></i> Message Preview
+            </p>
+            <pre style="margin:0;font-family:monospace;font-size:0.8rem;color:var(--text-light);white-space:pre-wrap;word-break:break-word;line-height:1.65;background:rgba(0,0,0,0.2);padding:10px 12px;border-radius:6px;">${lines.join('\n')}</pre>
+            ${recipientHtml}
+        </div>`;
+    box.style.display = 'block';
+}
+
+function sendWhatsAppQuery() {
+    const { lines, contact, name, mobile, issue, type } = buildWaMessage();
+
+    if (!name) {
+        showToast('Please enter your name.', 'error');
+        document.getElementById('wa-name')?.focus();
+        return;
+    }
+    if (!mobile) {
+        showToast('Please enter your mobile number.', 'error');
+        document.getElementById('wa-mobile')?.focus();
+        return;
+    }
+    if (!mobile.startsWith('+')) {
+        showToast('Mobile number must include country code (e.g. +94 77 123 4567).', 'error');
+        document.getElementById('wa-mobile')?.focus();
+        return;
+    }
+    if (!type) {
+        showToast('Please select the issue category.', 'error');
+        document.getElementById('wa-issue-type')?.focus();
+        return;
+    }
+    if (!issue) {
+        showToast('Please describe your issue or query before sending.', 'error');
+        document.getElementById('wa-issue')?.focus();
+        return;
+    }
+
+    const encoded = encodeURIComponent(lines.join('\n'));
+    window.open(`https://wa.me/${contact.number}?text=${encoded}`, '_blank', 'noopener');
+}
+
+// Run init
+init();
