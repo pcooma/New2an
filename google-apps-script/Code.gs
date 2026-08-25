@@ -33,10 +33,11 @@ const HEADERS = [
   'Venue_Transport','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone','Visit_Notes','Support_Category','Support_Reply_Method','Support_Request','Travel_Data_Consent',
   'Excursion_Interest','Excursion_Participant_Count','Excursion_Participant_Names','Excursion_Group_Details',
   'Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language','Excursion_Acknowledgement',
-  'Bill_To','Billing_Email','Billing_Address','Purchase_Order','Additional_Info',
+  'Bill_To','Billing_Legal_Name','Billing_Email','Billing_Address','Purchase_Order','Additional_Info',
   'Payment_Stage','Transaction_Reference','Amount_Paid','Payment_Currency','Payment_Proof_Files',
   'Policy_Agreement','Form_Schema_Version',
-  'Record_File_URL','Excursion_Fee_Per_Person_USD','Excursion_Total_USD'
+  'Record_File_URL','Excursion_Fee_Per_Person_USD','Excursion_Total_USD',
+  'Excursion_USD_to_EUR_Rate','Excursion_Total_EUR_Indicative'
 ];
 
 function doGet(e) {
@@ -44,7 +45,7 @@ function doGet(e) {
   try {
     if (action === 'getRegistration') return getRegistration(e.parameter);
     if (action === 'getSubmissions') return getSubmissions(e.parameter);
-    if (action === 'getWorkshops') return json({success:true,workshops:readWorkshops()});
+    if (action === 'getWorkshops') return json({success:true,workshops:readWorkshops(),publicSettings:readPublicSettings()});
     return json({success:true,status:CONFERENCE + ' Registration API running',schemaVersion:SCHEMA_VERSION});
   } catch (error) { return json({success:false,error:safeError(error)}); }
 }
@@ -56,6 +57,7 @@ function doPost(e) {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     if (body.action === 'adminLogin') return adminLogin(body);
     if (body.action === 'saveWorkshops') return saveWorkshops(body);
+    if (body.action === 'savePublicSettings') return savePublicSettings(body);
     if (body.action === 'submitRegistration') return saveRegistration(body.data || {});
     return json({success:false,error:'Unsupported action.'});
   } catch (error) { return json({success:false,error:safeError(error)}); }
@@ -66,6 +68,8 @@ function saveRegistration(input) {
   const data = normaliseRegistration(input);
   const errors = validateRegistration(data);
   if (errors.length) return json({success:false,error:errors.join(' ')});
+  const publicSettings = readPublicSettings();
+  if(data.Excursion_Interest === 'Yes' && !(publicSettings.usdToEurRate>0))return json({success:false,error:'The excursion conversion rate has not been configured. Please contact the organiser before registering for the excursion.'});
   const resources = getResources();
   const sheet = resources.sheet;
   const now = new Date();
@@ -83,18 +87,20 @@ function saveRegistration(input) {
   data.Registration_Fee = feeFor(now);
   data.Currency = 'EUR';
   data.Fee_Basis = data.Registration_Fee === 400 ? 'AUTHOR_OR_EARLY_ON_OR_BEFORE_2026-10-31' : 'LATE_AFTER_2026-10-31';
+  data.Excursion_Fee_Per_Person_USD = EXCURSION_FEE_USD;
+  data.Excursion_Total_USD = data.Excursion_Interest === 'Yes' ? EXCURSION_FEE_USD * data.Excursion_Participant_Count : 0;
+  data.Excursion_USD_to_EUR_Rate = data.Excursion_Interest === 'Yes' ? publicSettings.usdToEurRate : '';
+  data.Excursion_Total_EUR_Indicative = data.Excursion_Interest === 'Yes' ? roundMoney(data.Excursion_Total_USD * publicSettings.usdToEurRate) : 0;
   data.Form_Schema_Version = SCHEMA_VERSION;
   data.Record_File_URL = saveRecordFile(resources.recordsFolder, data);
-  const row = HEADERS.map(function(header) { return serialise(data[header]); });
-  if (existing.rowNumber) sheet.getRange(existing.rowNumber,1,1,HEADERS.length).setValues([row]);
-  else sheet.appendRow(row);
+  writeSheetRecord(sheet,data,existing.rowNumber);
   return json({success:true,referenceId:referenceId,status:data.Status,paymentStatus:data.Payment_Status});
 }
 
 function normaliseRegistration(input) {
   const output = {};
   HEADERS.forEach(function(header) { if (Object.prototype.hasOwnProperty.call(input,header)) output[header] = input[header]; });
-  ['Title','Full_Name','Certificate_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','CMT_Changes','Workshop_Attendance','Future_Workshop_Updates','Workshop_Notes','Passport_Name','Passport_Issuing_Country','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance','Room_Preference','Arrival_Date','Departure_Date','Arrival_Details','Departure_Details','Venue_Transport','Dietary_Preference','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone','Visit_Notes','Support_Category','Support_Reply_Method','Support_Request','Excursion_Interest','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language','Bill_To','Billing_Email','Billing_Address','Purchase_Order','Additional_Info','Payment_Stage','Transaction_Reference','Payment_Currency','Paper_1_ID','Paper_1_Title','Paper_2_ID','Paper_2_Title'].forEach(function(key) { output[key]=clean(output[key], key.indexOf('Notes') >= 0 || key.indexOf('Address') >= 0 || key.indexOf('Names') >= 0 || key.indexOf('Changes') >= 0 || key.indexOf('Request') >= 0 ? 2000 : 300); });
+  ['Title','Full_Name','Certificate_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','CMT_Changes','Workshop_Attendance','Future_Workshop_Updates','Workshop_Notes','Passport_Name','Passport_Issuing_Country','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance','Room_Preference','Arrival_Date','Departure_Date','Arrival_Details','Departure_Details','Venue_Transport','Dietary_Preference','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone','Visit_Notes','Support_Category','Support_Reply_Method','Support_Request','Excursion_Interest','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language','Bill_To','Billing_Legal_Name','Billing_Email','Billing_Address','Purchase_Order','Additional_Info','Payment_Stage','Transaction_Reference','Payment_Currency','Paper_1_ID','Paper_1_Title','Paper_2_ID','Paper_2_Title'].forEach(function(key) { output[key]=clean(output[key], key.indexOf('Notes') >= 0 || key.indexOf('Address') >= 0 || key.indexOf('Names') >= 0 || key.indexOf('Changes') >= 0 || key.indexOf('Request') >= 0 ? 2000 : 300); });
   output.Email = output.Email.toLowerCase();
   output.Billing_Email = output.Billing_Email.toLowerCase();
   output.Reference_ID = clean(input.Reference_ID,40).toUpperCase();
@@ -112,7 +118,7 @@ function normaliseRegistration(input) {
 
 function validateRegistration(d) {
   const errors=[];
-  ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','Bill_To','Billing_Address','Payment_Stage'].forEach(function(k){if(!d[k])errors.push(k.replace(/_/g,' ')+' is required.');});
+  ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','Bill_To','Billing_Legal_Name','Billing_Email','Billing_Address','Payment_Stage'].forEach(function(k){if(!d[k])errors.push(k.replace(/_/g,' ')+' is required.');});
   if(d.Attendance_Mode==='In person in Colombo'&&(!d.Emergency_Contact_Name||!d.Emergency_Contact_Phone))errors.push('Emergency contact name and phone are required for in-person participants.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.Email)) errors.push('A valid email is required.');
   if (!d.International_Eligibility_Confirmed || /^sri\s*lanka$/i.test(d.Country_of_Residence) || /^sri\s*lankan$/i.test(d.Nationality)) errors.push('This registration form is for participants who are not Sri Lankan citizens and do not live in Sri Lanka.');
@@ -144,8 +150,8 @@ function getRegistration(params) {
   const ref=clean(params.ref,40).toUpperCase(), email=clean(params.email,300).toLowerCase();
   if(!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(ref)||!email)return json({success:false,error:'Reference ID and email are required.'});
   const sheet=getResources().sheet, values=sheet.getDataRange().getValues();
-  const refIndex=HEADERS.indexOf('Reference_ID'),emailIndex=HEADERS.indexOf('Email');
-  for(let r=1;r<values.length;r++)if(String(values[r][refIndex])===ref&&String(values[r][emailIndex]).toLowerCase()===email){const out={};HEADERS.forEach(function(h,i){out[h]=values[r][i];});const hasProof=!!out.Payment_Proof_Files;delete out.Payment_Proof_Files;delete out.Record_File_URL;if(hasProof)out.Payment_Proof_Base64='(uploaded — see folder)';return json({success:true,data:out});}
+  const headers=values[0]||[],map=headerMap(headers),refIndex=map.Reference_ID,emailIndex=map.Email;
+  for(let r=1;r<values.length;r++)if(String(values[r][refIndex])===ref&&String(values[r][emailIndex]).toLowerCase()===email){const out=rowToObject(headers,values[r]);const hasProof=!!out.Payment_Proof_Files;delete out.Payment_Proof_Files;delete out.Record_File_URL;if(hasProof)out.Payment_Proof_Base64='(uploaded — see folder)';return json({success:true,data:out});}
   return json({success:false,error:'No matching registration was found.'});
 }
 
@@ -180,10 +186,51 @@ function saveWorkshops(body){
   return json({success:true,workshops:cleanRows});
 }
 
+function readPublicSettings(){
+  const props=PropertiesService.getScriptProperties(),stored=Number(props.getProperty('USD_TO_EUR_RATE'));
+  return {
+    excursionFeeUsd:EXCURSION_FEE_USD,
+    usdToEurRate:stored>0?stored:0,
+    issuerLegalName:clean(props.getProperty('INVOICE_ISSUER_LEGAL_NAME'),300),
+    issuerAddress:clean(props.getProperty('INVOICE_ISSUER_ADDRESS'),1000),
+    issuerRegistrationNumber:clean(props.getProperty('INVOICE_ISSUER_REGISTRATION_NUMBER'),120),
+    issuerTaxStatement:clean(props.getProperty('INVOICE_TAX_STATEMENT'),500),
+    issuerEmail:clean(props.getProperty('INVOICE_ISSUER_EMAIL'),300),
+    issuerPhone:clean(props.getProperty('INVOICE_ISSUER_PHONE'),100),
+    paymentInstructions:clean(props.getProperty('INVOICE_PAYMENT_INSTRUCTIONS'),1500),
+    paymentDueDays:Math.max(1,Math.min(90,parseInt(props.getProperty('INVOICE_PAYMENT_DUE_DAYS'),10)||14)),
+    termsUrl:clean(props.getProperty('INVOICE_TERMS_URL'),500)||'https://new2an.com/terms.html'
+  };
+}
+
+function savePublicSettings(body){
+  if(!validToken(body.token))return json({success:false,error:'Unauthorized.'});
+  const rate=Number(body.usdToEurRate);
+  if(!Number.isFinite(rate)||rate<=0||rate>10)return json({success:false,error:'Enter a valid USD to EUR rate greater than 0.'});
+  const settings={
+    INVOICE_ISSUER_LEGAL_NAME:clean(body.issuerLegalName,300),
+    INVOICE_ISSUER_ADDRESS:clean(body.issuerAddress,1000),
+    INVOICE_ISSUER_REGISTRATION_NUMBER:clean(body.issuerRegistrationNumber,120),
+    INVOICE_TAX_STATEMENT:clean(body.issuerTaxStatement,500),
+    INVOICE_ISSUER_EMAIL:clean(body.issuerEmail,300).toLowerCase(),
+    INVOICE_ISSUER_PHONE:clean(body.issuerPhone,100),
+    INVOICE_PAYMENT_INSTRUCTIONS:clean(body.paymentInstructions,1500),
+    INVOICE_PAYMENT_DUE_DAYS:String(Math.max(1,Math.min(90,parseInt(body.paymentDueDays,10)||0))),
+    INVOICE_TERMS_URL:clean(body.termsUrl,500)
+  };
+  if(!settings.INVOICE_ISSUER_LEGAL_NAME||!settings.INVOICE_ISSUER_ADDRESS||!settings.INVOICE_TAX_STATEMENT||!settings.INVOICE_ISSUER_EMAIL||!settings.INVOICE_PAYMENT_INSTRUCTIONS||!(parseInt(settings.INVOICE_PAYMENT_DUE_DAYS,10)>0))return json({success:false,error:'Complete the issuer legal name, address, tax statement, email, payment instructions and payment due period.'});
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(settings.INVOICE_ISSUER_EMAIL))return json({success:false,error:'Enter a valid invoice issuer email address.'});
+  const props=PropertiesService.getScriptProperties();
+  props.setProperty('USD_TO_EUR_RATE',String(roundRate(rate)));
+  Object.keys(settings).forEach(function(key){props.setProperty(key,settings[key]);});
+  return json({success:true,publicSettings:readPublicSettings()});
+}
+
 function getSubmissions(params) {
   if(!validToken(params.token))return json({success:false,error:'Unauthorized.'});
   const values=getResources().sheet.getDataRange().getValues(), rows=[];
-  for(let r=1;r<values.length;r++){const item={};HEADERS.forEach(function(h,i){item[h]=values[r][i];});rows.push(item);}
+  const headers=values[0]||[];
+  for(let r=1;r<values.length;r++)rows.push(rowToObject(headers,values[r]));
   return json({success:true,submissions:rows.reverse()});
 }
 
@@ -205,17 +252,36 @@ function getResources() {
 function ensureSchema(sheet) {
   if(sheet.getLastRow()===0){sheet.getRange(1,1,1,HEADERS.length).setValues([HEADERS]);sheet.setFrozenRows(1);return;}
   const existing=sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(String);
+  const blank=existing.some(function(h){return !h.trim();});
+  if(blank)throw new Error('The NEW2AN master-sheet header row contains a blank column name. Fill or remove that header before continuing.');
+  const duplicates=existing.filter(function(h,i){return existing.indexOf(h)!==i;});
+  if(duplicates.length)throw new Error('The NEW2AN master-sheet contains duplicate headers: '+duplicates.join(', ')+'. Repair the header row before continuing.');
   const missing=HEADERS.filter(function(h){return existing.indexOf(h)<0;});
   if(missing.length)sheet.getRange(1,existing.length+1,1,missing.length).setValues([missing]);
-  const finalHeaders=sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(String);
-  if(HEADERS.some(function(h,i){return finalHeaders[i]!==h;}))throw new Error('The NEW2AN master-sheet header order is incompatible. Use a new dedicated folder or repair the header row.');
 }
 
 function findRow(sheet, ref, email) {
   const values=sheet.getDataRange().getValues();
-  const refIndex=HEADERS.indexOf('Reference_ID'),emailIndex=HEADERS.indexOf('Email'),proofIndex=HEADERS.indexOf('Payment_Proof_Files');
-  for(let r=1;r<values.length;r++)if((ref&&String(values[r][refIndex])===ref)||(!ref&&String(values[r][emailIndex]).toLowerCase()===String(email).toLowerCase()))return{rowNumber:r+1,referenceId:String(values[r][refIndex]),submissionDate:values[r][0],status:values[r][3],paymentStatus:values[r][4],paymentProofFiles:values[r][proofIndex]};
+  const headers=values[0]||[],map=headerMap(headers),refIndex=map.Reference_ID,emailIndex=map.Email,proofIndex=map.Payment_Proof_Files;
+  for(let r=1;r<values.length;r++)if((ref&&String(values[r][refIndex])===ref)||(!ref&&String(values[r][emailIndex]).toLowerCase()===String(email).toLowerCase())){const item=rowToObject(headers,values[r]);return{rowNumber:r+1,referenceId:String(values[r][refIndex]),submissionDate:item.Submission_Date,status:item.Status,paymentStatus:item.Payment_Status,paymentProofFiles:values[r][proofIndex]};}
   return {};
+}
+
+function headerMap(headers){
+  const map={};headers.forEach(function(header,index){map[String(header)]=index;});
+  return map;
+}
+
+function rowToObject(headers,row){
+  const item={};headers.forEach(function(header,index){if(HEADERS.indexOf(String(header))>=0)item[String(header)]=row[index];});
+  return item;
+}
+
+function writeSheetRecord(sheet,data,rowNumber){
+  const headers=sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(String),map=headerMap(headers);
+  const row=rowNumber?sheet.getRange(rowNumber,1,1,headers.length).getValues()[0]:headers.map(function(){return '';});
+  HEADERS.forEach(function(header){if(Object.prototype.hasOwnProperty.call(map,header))row[map[header]]=serialise(data[header]);});
+  if(rowNumber)sheet.getRange(rowNumber,1,1,headers.length).setValues([row]);else sheet.appendRow(row);
 }
 
 function validateUpload(file){
@@ -252,6 +318,8 @@ function saveRecordFile(folder,data) {
 }
 
 function feeFor(date){return date<=EARLY_DEADLINE?400:500;}
+function roundMoney(value){return Math.round(Number(value)*100)/100;}
+function roundRate(value){return Math.round(Number(value)*1000000)/1000000;}
 function makeReferenceId(){return 'NEW2AN2026-'+Utilities.getUuid().replace(/-/g,'').slice(0,9).toUpperCase();}
 function clean(value,max){return String(value==null?'':value).replace(/[\u0000-\u001F\u007F]/g,' ').trim().slice(0,max||500);}
 function serialise(value){return typeof value==='boolean'?value:(value==null?'':value);}

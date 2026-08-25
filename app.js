@@ -27,6 +27,7 @@ let currentReferenceId = '';
 let paymentProofFiles = [];
 let paymentProofPreviouslyUploaded = false;
 let workshopSettings = [{id:'seeing-through-ai-2026',title:'Seeing Through AI: Deep Learning for Computer Vision',date:'2026-07-21',time:'09:30–12:30',venue:'G906, New Building',fee:0,currency:'EUR',status:'completed',contact:'Mr. Amila Karunanayake, +94 77 443 9069'}];
+let publicSettings = {excursionFeeUsd:CONFIG.excursionFeeUsd,usdToEurRate:0,issuerLegalName:'',issuerAddress:'',issuerRegistrationNumber:'',issuerTaxStatement:'',issuerEmail:'',issuerPhone:'',paymentInstructions:'',paymentDueDays:14,termsUrl:'https://new2an.com/terms.html'};
 let editingWorkshopIndex = -1;
 
 function ensureOperationalFields() {
@@ -96,7 +97,7 @@ function clarifyParticipantCopy() {
   const travelConsentText=form.elements.Travel_Data_Consent?.closest('label')?.querySelector('span');
   if(travelConsentText) travelConsentText.textContent='If I request travel or hotel assistance, I allow the organising team to share only the necessary details with its approved service partner.';
   const excursionText=form.elements.Excursion_Acknowledgement?.closest('label')?.querySelector('span');
-  if(excursionText) excursionText.textContent='I understand that the excursion costs USD 50 per participant, is charged separately, and that the route, date, inclusions, insurance information and cancellation terms will be issued separately.';
+  if(excursionText) excursionText.textContent='I understand that the excursion costs USD 50 per participant, is charged separately, and is payable on the day of the excursion. The route, date, inclusions, insurance information and cancellation terms will be issued separately.';
   setLabel('Excursion_Interest','Would you like to join the planned conference excursion?');
   setLabel('Excursion_Participant_Count','Total number of excursion participants, including you');
   setLabel('Excursion_Participant_Names','Names of additional excursion participants');
@@ -107,6 +108,7 @@ function clarifyParticipantCopy() {
   setLabel('Excursion_Dietary_Needs','Excursion meal allergies or dietary requirements');
   setLabel('Excursion_Guide_Language','Preferred language for the excursion guide');
   setLabel('Bill_To','Who should the pre-payment invoice be addressed to?');
+  setLabel('Billing_Legal_Name','Exact legal name to print under Bill to');
   setLabel('Billing_Email','Email address for the invoice or finance office');
   setLabel('Billing_Address','Address to show on the invoice');
   setLabel('Purchase_Order','Purchase order number or tax reference, if required by your institution');
@@ -121,7 +123,7 @@ function clarifyParticipantCopy() {
   document.getElementById('proforma-btn').textContent = 'Download pre-payment invoice PDF';
   document.getElementById('submit-btn').textContent = 'Send registration details';
   document.querySelector('#visit-section .section-heading p').textContent = 'Tell us what assistance you may need. These answers are planning requests only and do not confirm flights, airport transfers, hotels or visa approval.';
-  document.querySelector('#excursion-section .section-heading p').textContent = 'The excursion costs USD 50 per participant and is charged separately from conference registration.';
+  updateExcursionPricingText();
   const workshop=document.querySelector('#workshop-section .section-heading p');
   if(workshop) workshop.textContent='Tell us whether you attended the workshop already held on 21 July 2026, and whether you want announcements about any new workshops.';
 }
@@ -157,6 +159,14 @@ function currentFee(now = new Date()) {
   return now <= new Date(CONFIG.earlyDeadline) ? CONFIG.earlyFee : CONFIG.lateFee;
 }
 
+function updateExcursionPricingText(){
+  const fee=Number(publicSettings.excursionFeeUsd||CONFIG.excursionFeeUsd);
+  const rate=Number(publicSettings.usdToEurRate||0);
+  const rateText=rate>0?` The current organiser-set indicative conversion is 1 USD = EUR ${rate.toFixed(4)}.`:' The indicative EUR conversion is awaiting organiser configuration.';
+  const heading=document.querySelector('#excursion-section .section-heading p');
+  if(heading)heading.textContent=`The excursion costs USD ${fee.toFixed(2)} per participant, is charged separately from conference registration, and is payable on the day of the excursion.${rateText}`;
+}
+
 function refreshFee() {
   const fee = currentFee();
   const early = fee === CONFIG.earlyFee;
@@ -184,8 +194,10 @@ function toObject(targetForm) {
   data.Currency = CONFIG.currency;
   data.Payment_Currency = CONFIG.currency;
   data.Payment_Status = 'AWAITING_INSTRUCTIONS';
-  data.Excursion_Fee_Per_Person_USD = CONFIG.excursionFeeUsd;
-  data.Excursion_Total_USD = data.Excursion_Interest === 'Yes' ? CONFIG.excursionFeeUsd * Number(data.Excursion_Participant_Count || 0) : 0;
+  data.Excursion_Fee_Per_Person_USD = publicSettings.excursionFeeUsd;
+  data.Excursion_Total_USD = data.Excursion_Interest === 'Yes' ? publicSettings.excursionFeeUsd * Number(data.Excursion_Participant_Count || 0) : 0;
+  data.Excursion_USD_to_EUR_Rate = data.Excursion_Interest === 'Yes' ? publicSettings.usdToEurRate : '';
+  data.Excursion_Total_EUR_Indicative = data.Excursion_Interest === 'Yes' ? Number((data.Excursion_Total_USD * publicSettings.usdToEurRate).toFixed(2)) : 0;
   data.Form_Schema_Version = 1;
   data.Workshop_Selections = Array.from(document.querySelectorAll('.future-workshop-choice:checked')).map(el => el.value).join(' | ');
   if (currentReferenceId) data.Reference_ID = currentReferenceId;
@@ -205,6 +217,7 @@ function validateBusinessRules(data) {
     if (!Number.isInteger(count) || count < 1 || count > 10) return 'Enter a valid excursion participant count from 1 to 10.';
     if (count > 1 && !data.Excursion_Participant_Names.trim()) return 'Enter the names of everyone joining the excursion with you.';
     if (!data.Excursion_Acknowledgement) return 'Please acknowledge that the excursion details and price are still provisional.';
+    if (!(Number(publicSettings.usdToEurRate) > 0)) return 'The organiser has not configured the excursion USD-to-EUR rate yet. Please retry later or contact the organiser.';
   }
   if (data.Payment_Stage !== 'NOT_PAID') {
     if (!data.Transaction_Reference.trim()) return 'Enter the reference number shown on your bank-transfer receipt or online payment confirmation.';
@@ -319,7 +332,8 @@ function renderWorkshopChoices() {
 
 async function loadWorkshopSettings(){
   if(!CONFIG.apiUrl){renderWorkshopChoices();renderWorkshopAdmin();return;}
-  try{const result=await api(null,'?action=getWorkshops');workshopSettings=result.workshops||workshopSettings;}catch(_){}
+  try{const result=await api(null,'?action=getWorkshops');workshopSettings=result.workshops||workshopSettings;publicSettings=result.publicSettings||publicSettings;}catch(_){}
+  updateExcursionPricingText();
   renderWorkshopChoices();renderWorkshopAdmin();
 }
 
@@ -327,15 +341,51 @@ function ensureWorkshopAdmin(){
   const panel=document.getElementById('admin-panel');
   if(document.getElementById('workshop-admin'))return;
   const section=document.createElement('section');section.id='workshop-admin';section.className='workshop-admin';
-  section.innerHTML=`<div class="section-heading"><span>W</span><div><h3>Workshop manager</h3><p>Add future workshops as draft, open, closed or completed. Only open workshops appear as selectable options.</p></div></div><div id="workshop-admin-list"></div><div class="grid two"><label>Title<input id="ws-title"></label><label>Date<input id="ws-date" type="date"></label><label>Time<input id="ws-time" placeholder="09:30–12:30"></label><label>Venue<input id="ws-venue"></label><label>Fee<input id="ws-fee" type="number" min="0" step="0.01" value="0"></label><label>Currency<input id="ws-currency" value="EUR"></label><label>Status<select id="ws-status"><option>draft</option><option>open</option><option>closed</option><option>completed</option></select></label><label>Coordinator / contact<input id="ws-contact"></label></div><div class="admin-actions"><button type="button" id="ws-add" class="btn secondary">Add workshop</button><button type="button" id="ws-save" class="btn primary">Save workshop settings</button></div><p id="ws-message" class="form-message"></p>`;
+  section.innerHTML=`<div class="section-heading"><span>I</span><div><h3>Invoice issuer and payment settings</h3><p>Use verified legal details. These values appear on organization-facing proforma invoices.</p></div></div>
+    <div class="grid two">
+      <label>Issuer legal name<input id="invoice-issuer-name" required></label>
+      <label>Issuer email<input id="invoice-issuer-email" type="email" required></label>
+      <label class="span-2">Issuer registered address<textarea id="invoice-issuer-address" rows="3" required></textarea></label>
+      <label>Registration number, if applicable<input id="invoice-registration-number"></label>
+      <label>Issuer telephone<input id="invoice-issuer-phone"></label>
+      <label class="span-2">Tax statement<textarea id="invoice-tax-statement" rows="2" required placeholder="For example: No VAT is charged. Confirm this wording with the issuer."></textarea></label>
+      <label class="span-2">Payment instructions<textarea id="invoice-payment-instructions" rows="3" required placeholder="Use only organizer-approved payment instructions."></textarea></label>
+      <label>Payment due within days<input id="invoice-due-days" type="number" min="1" max="90" value="14" required></label>
+      <label>Terms URL<input id="invoice-terms-url" type="url" value="https://new2an.com/terms.html"></label>
+      <label>1 USD equals EUR<input id="usd-eur-rate" type="number" min="0.000001" max="10" step="0.000001" placeholder="Required for excursion invoices"></label>
+    </div>
+    <div class="admin-actions"><button type="button" id="currency-save" class="btn primary">Save invoice settings</button></div><p id="currency-message" class="form-message"></p>
+    <div class="section-heading"><span>W</span><div><h3>Workshop manager</h3><p>Add future workshops as draft, open, closed or completed. Only open workshops appear as selectable options.</p></div></div><div id="workshop-admin-list"></div><div class="grid two"><label>Title<input id="ws-title"></label><label>Date<input id="ws-date" type="date"></label><label>Time<input id="ws-time" placeholder="09:30-12:30"></label><label>Venue<input id="ws-venue"></label><label>Fee<input id="ws-fee" type="number" min="0" step="0.01" value="0"></label><label>Currency<input id="ws-currency" value="EUR"></label><label>Status<select id="ws-status"><option>draft</option><option>open</option><option>closed</option><option>completed</option></select></label><label>Coordinator / contact<input id="ws-contact"></label></div><div class="admin-actions"><button type="button" id="ws-add" class="btn secondary">Add workshop</button><button type="button" id="ws-save" class="btn primary">Save workshop settings</button></div><p id="ws-message" class="form-message"></p>`;
   panel.insertBefore(section,panel.querySelector('.table-wrap'));
   document.getElementById('ws-add').addEventListener('click',upsertWorkshopDraft);
   document.getElementById('ws-save').addEventListener('click',saveWorkshopSettings);
+  document.getElementById('currency-save').addEventListener('click',savePublicSettings);
   document.getElementById('workshop-admin-list').addEventListener('click',event=>{const index=Number(event.target.dataset.edit);if(Number.isInteger(index))editWorkshop(index);});
+}
+
+async function savePublicSettings(){
+  const box=document.getElementById('currency-message'),rate=Number(document.getElementById('usd-eur-rate').value);
+  if(!Number.isFinite(rate)||rate<=0){box.textContent='Enter a valid conversion rate greater than 0.';box.className='form-message error';return;}
+  const value=id=>document.getElementById(id).value.trim();
+  const payload={action:'savePublicSettings',token:adminToken,usdToEurRate:rate,issuerLegalName:value('invoice-issuer-name'),issuerAddress:value('invoice-issuer-address'),issuerRegistrationNumber:value('invoice-registration-number'),issuerTaxStatement:value('invoice-tax-statement'),issuerEmail:value('invoice-issuer-email'),issuerPhone:value('invoice-issuer-phone'),paymentInstructions:value('invoice-payment-instructions'),paymentDueDays:Number(value('invoice-due-days')),termsUrl:value('invoice-terms-url')};
+  if(!payload.issuerLegalName||!payload.issuerAddress||!payload.issuerTaxStatement||!payload.issuerEmail||!payload.paymentInstructions||!(payload.paymentDueDays>0)){box.textContent='Complete all required issuer, tax, payment and due-period fields.';box.className='form-message error';return;}
+  try{const result=await api(payload);publicSettings=result.publicSettings;renderInvoiceAdminSettings();updateExcursionPricingText();box.textContent='Invoice and excursion settings saved.';box.className='form-message success';}
+  catch(error){box.textContent=error.message;box.className='form-message error';}
+}
+
+function renderInvoiceAdminSettings(){
+  const fields={
+    'invoice-issuer-name':publicSettings.issuerLegalName,'invoice-issuer-address':publicSettings.issuerAddress,'invoice-registration-number':publicSettings.issuerRegistrationNumber,
+    'invoice-tax-statement':publicSettings.issuerTaxStatement,'invoice-issuer-email':publicSettings.issuerEmail,'invoice-issuer-phone':publicSettings.issuerPhone,
+    'invoice-payment-instructions':publicSettings.paymentInstructions,'invoice-due-days':publicSettings.paymentDueDays,'invoice-terms-url':publicSettings.termsUrl,
+    'usd-eur-rate':publicSettings.usdToEurRate>0?Number(publicSettings.usdToEurRate).toFixed(4):''
+  };
+  Object.entries(fields).forEach(([id,value])=>{const input=document.getElementById(id);if(input&&document.activeElement!==input)input.value=value??'';});
 }
 
 function renderWorkshopAdmin(){
   ensureWorkshopAdmin();
+  renderInvoiceAdminSettings();
   document.getElementById('workshop-admin-list').innerHTML=workshopSettings.map((w,i)=>`<div class="admin-workshop-row"><div><strong>${escapeHtml(w.title)}</strong><span>${escapeHtml(w.date)} · ${escapeHtml(w.status)} · ${Number(w.fee)===0?'Free':`${escapeHtml(w.currency)} ${Number(w.fee).toFixed(2)}`}</span></div><button type="button" class="btn secondary" data-edit="${i}">Edit</button></div>`).join('');
 }
 
@@ -377,29 +427,45 @@ document.getElementById('payment-proof').addEventListener('change', event => {
 document.getElementById('proforma-btn').addEventListener('click', generateProforma);
 
 function generateProforma() {
-  const required = ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','Bill_To','Billing_Address'];
+  const required = ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','Bill_To','Billing_Legal_Name','Billing_Email','Billing_Address'];
   const missing = required.map(name => form.elements[name]).find(el => !el || !String(el.value).trim());
   if (missing) { missing.focus(); setMessage('Complete the required participant, paper and billing fields before downloading the pre-payment invoice.', 'error'); return; }
   if (role.value === 'Author / presenting author' && Number(paperCount.value) < 1) { setMessage('Presenting authors must enter at least one accepted paper.', 'error'); return; }
   for (let i=1;i<=Number(paperCount.value);i++) if (!form.elements[`Paper_${i}_ID`]?.value.trim() || !form.elements[`Paper_${i}_Title`]?.value.trim()) { setMessage(`Complete the ID and title for paper ${i}.`, 'error'); return; }
   if (!window.jspdf) { setMessage('The PDF library is unavailable. Check your connection and retry.', 'error'); return; }
+  const settingsMissing=[['issuerLegalName','issuer legal name'],['issuerAddress','issuer address'],['issuerTaxStatement','tax statement'],['issuerEmail','issuer email'],['paymentInstructions','payment instructions']].filter(([key])=>!String(publicSettings[key]||'').trim()).map(([,label])=>label);
+  if(settingsMissing.length){setMessage(`The organiser must configure the invoice ${settingsMissing.join(', ')} before an organization-ready proforma can be generated.`,'error');return;}
   if (!currentReferenceId) currentReferenceId = makeReferenceId();
   document.getElementById('reference-display').textContent = `Reference ID: ${currentReferenceId}`;
   const data = toObject(form);
+  if(data.Excursion_Interest==='Yes'&&!(Number(publicSettings.usdToEurRate)>0)){setMessage('The organiser has not configured the excursion USD-to-EUR rate yet, so an excursion invoice cannot be generated. Please retry later or contact the organiser.','error');return;}
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({unit:'mm',format:'a4'});
-  const left=18, right=192;
-  doc.setFillColor(9,35,60); doc.rect(0,0,210,35,'F');
-  doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.text('NEW2AN 2026',left,16);
-  doc.setFontSize(10); doc.setFont('helvetica','normal'); doc.text('PROFORMA INVOICE',left,25); doc.text('15-17 December 2026 | Colombo, Sri Lanka',right,25,{align:'right'});
-  doc.setTextColor(23,39,51); doc.setFontSize(10); let y=48;
-  const line=(label,value)=>{doc.setFont('helvetica','bold');doc.text(label,left,y);doc.setFont('helvetica','normal');const wrapped=doc.splitTextToSize(String(value||'-'),128);doc.text(wrapped,60,y);y+=Math.max(7,wrapped.length*5);};
-  line('Reference',currentReferenceId); line('Issue date',new Date().toLocaleDateString('en-GB')); line('Participant',`${data.Title} ${data.Full_Name}`); line('Email',data.Email); line('Organisation',data.Organization); line('Bill to',data.Bill_To); line('Billing address',data.Billing_Address);
-  y+=5; doc.setDrawColor(205,218,222);doc.line(left,y,right,y);y+=10;
-  doc.setFont('helvetica','bold');doc.text('Description',left,y);doc.text('Amount',right,y,{align:'right'});y+=7;doc.setFont('helvetica','normal');doc.text('Full NEW2AN registration - three conference days',left,y);doc.text(`EUR ${currentFee().toFixed(2)}`,right,y,{align:'right'});y+=6;doc.setFontSize(8);doc.text('Includes online session access and digital Springer LNCS proceedings.',left,y);y+=10;doc.line(left,y,right,y);y+=9;doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text('TOTAL',left,y);doc.text(`EUR ${currentFee().toFixed(2)}`,right,y,{align:'right'});
-  if(data.Excursion_Interest==='Yes'){line('Excursion (charged separately)',`USD ${(CONFIG.excursionFeeUsd*Number(data.Excursion_Participant_Count||1)).toFixed(2)} (${Number(data.Excursion_Participant_Count||1)} participant${Number(data.Excursion_Participant_Count||1)===1?'':'s'})`);}
-  y+=18;doc.setFontSize(9);doc.setFont('helvetica','normal');const notes=['This is a proforma invoice, not a payment receipt or tax invoice.','Registration is complete only after successful payment confirmation by NEW2AN.','The excursion costs USD 50 per participant and is charged separately from the EUR conference fee.','Travel, accommodation, visa, insurance and personal costs are not included.','Use the reference above consistently during registration and payment.','Official payment contact: new2an@crisglobal.org'];notes.forEach(note=>{doc.text(note,left,y);y+=6;});
-  doc.setTextColor(100);doc.setFontSize(8);doc.text('System generated. No signature required.',left,286);doc.save(`NEW2AN2026_Proforma_${currentReferenceId}.pdf`);
+  const left=18,right=192,width=right-left,navy=[9,35,60],ink=[23,39,51],muted=[90,105,112];
+  const issueDate=new Date(),dueDate=new Date(issueDate);dueDate.setDate(dueDate.getDate()+Number(publicSettings.paymentDueDays||14));
+  const dateText=date=>date.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  const invoiceNumber=`PRO-${currentReferenceId}`;
+  let y=0;
+  const addPageHeader=()=>{doc.setFillColor(...navy);doc.rect(0,0,210,34,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(18);doc.text('NEW2AN 2026',left,14);doc.setFontSize(10);doc.text('PROFORMA INVOICE',left,23);doc.setFont('helvetica','normal');doc.setFontSize(8);const issuer=doc.splitTextToSize(String(publicSettings.issuerLegalName),85);doc.text(issuer,right,11,{align:'right'});doc.text('15-17 December 2026 | Colombo, Sri Lanka',right,27,{align:'right'});doc.setTextColor(...ink);y=44;};
+  const addContinuationPage=()=>{doc.addPage();doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(...navy);doc.text('NEW2AN 2026 | PROFORMA INVOICE - CONTINUED',left,12);doc.setFont('helvetica','normal');doc.text(invoiceNumber,right,12,{align:'right'});doc.setDrawColor(205,218,222);doc.line(left,17,right,17);doc.setTextColor(...ink);y=25;};
+  const ensureSpace=needed=>{if(y+needed>268)addContinuationPage();};
+  const wrapped=(text,x,maxWidth,lineHeight=4.5)=>{const lines=doc.splitTextToSize(String(text||'-'),maxWidth),height=Math.max(lineHeight,lines.length*lineHeight);ensureSpace(height);doc.text(lines,x,y);y+=height;return lines;};
+  const field=(label,value)=>{const lines=doc.splitTextToSize(String(value||'-'),width),height=4+Math.max(4.5,lines.length*4.5)+2;ensureSpace(height);doc.setFontSize(8);doc.setTextColor(...muted);doc.setFont('helvetica','bold');doc.text(label.toUpperCase(),left,y);y+=4;doc.setFontSize(9.5);doc.setTextColor(...ink);doc.setFont('helvetica','normal');doc.text(lines,left,y);y+=Math.max(4.5,lines.length*4.5)+2;};
+  const section=(title,needed=14)=>{ensureSpace(needed);y+=2;doc.setDrawColor(205,218,222);doc.line(left,y,right,y);y+=7;doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text(title,left,y);y+=7;doc.setTextColor(...ink);};
+  addPageHeader();
+  doc.setFillColor(246,249,250);doc.roundedRect(left,y,width,22,2,2,'F');doc.setFontSize(8);doc.setTextColor(...muted);doc.setFont('helvetica','bold');doc.text('PROFORMA NUMBER',left+5,y+7);doc.text('ISSUE DATE',85,y+7);doc.text('PAYMENT DUE',135,y+7);doc.setFontSize(10);doc.setTextColor(...ink);doc.text(invoiceNumber,left+5,y+15);doc.text(dateText(issueDate),85,y+15);doc.text(dateText(dueDate),135,y+15);y+=28;
+  doc.setFillColor(255,248,230);doc.roundedRect(left,y,width,26,2,2,'F');doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(...ink);doc.text('DOCUMENT STATUS',left+5,y+7);doc.setFont('helvetica','normal');doc.setFontSize(8);const statusLines=doc.splitTextToSize('For institutional approval and payment processing only. This proforma is not proof of payment, a tax invoice, or a receipt. Obtain the organizer-issued paid invoice or official receipt after payment verification for reimbursement.',width-10);doc.text(statusLines,left+5,y+13);y+=32;
+  section('Issued by');field('Legal issuer',publicSettings.issuerLegalName);field('Registered address',publicSettings.issuerAddress);if(publicSettings.issuerRegistrationNumber)field('Registration number',publicSettings.issuerRegistrationNumber);field('Contact',[publicSettings.issuerEmail,publicSettings.issuerPhone].filter(Boolean).join(' | '));
+  section('Bill to');field('Legal name',data.Billing_Legal_Name);field('Billing address',data.Billing_Address);field('Finance email',data.Billing_Email);field('Participant',`${data.Title} ${data.Full_Name} | ${data.Email}`);field('Institution / organisation',data.Organization);if(data.Purchase_Order)field('Purchase order / tax reference',data.Purchase_Order);if(data.Additional_Info)field('Additional billing information',data.Additional_Info);
+  section('Conference registration',105);field('Event','26th International Conference on Next Generation Teletraffic and Wired/Wireless Advanced Networks (NEW2AN 2026)');field('Event dates and place','15-17 December 2026 | Colombo, Sri Lanka');field('Attendance',data.Attendance_Mode);for(let i=1;i<=Number(data.Paper_Count||0);i++)field(`Accepted paper ${i}`,`${data[`Paper_${i}_ID`]} - ${data[`Paper_${i}_Title`]}`);
+  ensureSpace(42);doc.setFillColor(...navy);doc.rect(left,y,width,8,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('DESCRIPTION',left+4,y+5.5);doc.text('QTY',128,y+5.5,{align:'center'});doc.text('UNIT PRICE',160,y+5.5,{align:'right'});doc.text('AMOUNT',right-3,y+5.5,{align:'right'});y+=14;doc.setTextColor(...ink);doc.setFont('helvetica','normal');doc.text('Full NEW2AN registration - three conference days',left+4,y);doc.text('1',128,y,{align:'center'});doc.text(`EUR ${currentFee().toFixed(2)}`,160,y,{align:'right'});doc.text(`EUR ${currentFee().toFixed(2)}`,right-3,y,{align:'right'});y+=6;doc.setFontSize(8);doc.setTextColor(...muted);wrapped('Includes conference participation, online session access and digital Springer LNCS proceedings.',left+4,100,4);y+=3;doc.setDrawColor(205,218,222);doc.line(left,y,right,y);y+=8;doc.setTextColor(...ink);doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('REGISTRATION TOTAL PAYABLE NOW',left,y);doc.text(`EUR ${currentFee().toFixed(2)}`,right,y,{align:'right'});y+=10;
+  if(data.Excursion_Interest==='Yes'){
+    const count=Number(data.Excursion_Participant_Count||1),fee=Number(publicSettings.excursionFeeUsd),usdTotal=fee*count,rate=Number(publicSettings.usdToEurRate),eurTotal=usdTotal*rate;
+    ensureSpace(46);doc.setFillColor(239,246,248);doc.roundedRect(left,y,width,39,2,2,'F');y+=7;doc.setFontSize(10);doc.setFont('helvetica','bold');doc.text('EXCURSION - PAYABLE ON THE EXCURSION DAY',left+4,y);y+=7;doc.setFontSize(9);doc.setFont('helvetica','normal');doc.text(`${count} participant${count===1?'':'s'} x USD ${fee.toFixed(2)} = USD ${usdTotal.toFixed(2)}`,left+4,y);y+=6;doc.text(`Organiser-set indicative rate: 1 USD = EUR ${rate.toFixed(4)}`,left+4,y);y+=6;doc.setFont('helvetica','bold');doc.text(`Indicative EUR equivalent: EUR ${eurTotal.toFixed(2)}`,left+4,y);y+=6;doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text('Separate from registration. Do not pay this amount now.',left+4,y);y+=10;
+  }
+  section('Tax and payment',65);field('Tax treatment',publicSettings.issuerTaxStatement);field('Payment instructions',publicSettings.paymentInstructions);field('Payment reference',currentReferenceId);field('Terms',publicSettings.termsUrl);
+  const pages=doc.getNumberOfPages();for(let page=1;page<=pages;page++){doc.setPage(page);doc.setDrawColor(220);doc.line(left,280,right,280);doc.setFontSize(7.5);doc.setTextColor(...muted);doc.text(`System generated | ${publicSettings.issuerEmail}`,left,286);doc.text(`Page ${page} of ${pages}`,right,286,{align:'right'});}
+  doc.save(`NEW2AN2026_Proforma_${currentReferenceId}.pdf`);
   localStorage.setItem('new2an2026_last_reference',JSON.stringify({referenceId:currentReferenceId,email:data.Email}));
   setMessage(`Pre-payment invoice downloaded. Keep reference ID ${currentReferenceId}; you will need it for payment and to reopen this registration.`, 'success');
 }
@@ -470,7 +536,7 @@ document.getElementById('export-btn').addEventListener('click', () => {
   add('Meals',submissions.filter(r=>r.Attendance_Mode==='In person in Colombo').map(r=>pick(r,['Reference_ID','Full_Name','Organization','Dietary_Preference','Excursion_Interest','Excursion_Dietary_Needs','Visit_Notes'])));
   add('Travel Logistics',submissions.filter(r=>r.Attendance_Mode==='In person in Colombo').map(r=>pick(r,['Reference_ID','Full_Name','Phone','Arrival_Date','Arrival_Details','Departure_Date','Departure_Details','Travel_Agency_Assistance','Venue_Transport','Visa_Support','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone'])));
   add('Accommodation',submissions.filter(r=>r.Accommodation_Assistance&&r.Accommodation_Assistance!=='No').map(r=>pick(r,['Reference_ID','Full_Name','Email','Phone','Accommodation_Assistance','Room_Preference','Arrival_Date','Departure_Date','Visit_Notes'])));
-  add('Excursion',submissions.filter(r=>r.Excursion_Interest&&r.Excursion_Interest!=='No').map(r=>pick(r,['Reference_ID','Full_Name','Phone','Excursion_Interest','Excursion_Participant_Count','Excursion_Fee_Per_Person_USD','Excursion_Total_USD','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language'])));
+  add('Excursion',submissions.filter(r=>r.Excursion_Interest&&r.Excursion_Interest!=='No').map(r=>pick(r,['Reference_ID','Full_Name','Phone','Excursion_Interest','Excursion_Participant_Count','Excursion_Fee_Per_Person_USD','Excursion_Total_USD','Excursion_USD_to_EUR_Rate','Excursion_Total_EUR_Indicative','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language'])));
   add('Workshops',submissions.map(r=>pick(r,['Reference_ID','Full_Name','Email','Workshop_Attendance','Workshop_Selections','Future_Workshop_Updates','Workshop_Notes'])));
   add('Payments',submissions.map(r=>pick(r,['Reference_ID','Full_Name','Email','Registration_Fee','Currency','Payment_Stage','Payment_Status','Transaction_Reference','Amount_Paid','Payment_Currency','Payment_Proof_Files'])));
   add('Support Requests',submissions.filter(r=>r.Support_Request||r.Support_Category).map(r=>pick(r,['Reference_ID','Full_Name','Email','Phone','Country_of_Residence','Support_Category','Support_Reply_Method','Support_Request','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance'])));

@@ -26,7 +26,8 @@ The official site does not yet publish the exact Colombo venue, final technical 
 - Accommodation/room preference, dietary requirements, accessibility needs, and an emergency contact for in-person participants.
 - Excursion interest, total passengers, companion names, activity level, mobility, allergies/diet, guide language and provisional-terms acknowledgement.
 - Admin-configurable workshop catalogue with draft, open, closed and completed states. Open workshops become selectable without editing the public HTML.
-- Stable reference ID, downloadable proforma, payment stage/reference/amount, fixed EUR currency, up to three proof files, and explicit manual-verification status.
+- Stable reference ID, downloadable proforma, payment stage/reference/amount, fixed EUR registration currency, up to three proof files, and explicit manual-verification status. When an excursion is selected, the proforma separately shows its USD total, the administrator-set indicative USD-to-EUR rate, its indicative EUR equivalent, and that it is payable on the excursion day rather than with registration.
+- Organization-ready proforma fields: verified issuer legal identity and registered address, issuer registration number when applicable, issuer contact, tax statement, payment instructions, payment due date, participant and legal billed-party identity, billing email/address, purchase-order reference, accepted-paper details, itemized registration total, terms URL and document-status warning. A proforma supports approval/payment processing; it does not replace the organizer-issued paid invoice or receipt required after payment verification.
 - Online participants are not forced to complete travel and excursion fields.
 
 The Admin Excel export contains separate sheets for all registrations, meals, travel logistics, accommodation, excursions, workshops and payments so operational teams do not have to manually filter the master dataset.
@@ -41,6 +42,8 @@ The Admin Excel export contains separate sheets for all registrations, meals, tr
 6. Put the resulting `/exec` URL in `CONFIG.apiUrl` in `app.js`.
 7. Redeploy after every backend change. An endpoint health response alone does not prove that the latest code is deployed.
 8. Submit a test registration, reload it by reference plus email, sign into the direct Admin URL at `https://pcooma.github.io/New2an/#admin`, and export the Excel workbook before publishing the link.
+9. In Admin, enter and save the verified invoice issuer legal name, registered address, registration number if applicable, tax statement, issuer email/telephone, payment instructions, due period, terms URL and the current indicative `1 USD = EUR` excursion conversion rate. Invoice generation remains blocked while required issuer fields are incomplete.
+10. Generate a test proforma addressed to an institution with a purchase-order reference, a long billing address, two accepted papers and two excursion participants. Confirm that it shows the USD 100 excursion total, the saved rate, the calculated EUR equivalent, no inclusion of the excursion in the registration amount payable now, and clean multi-page rendering.
 
 The backend never uses the former SICET folder ID. The master workbook uses a dedicated NEW2AN schema and evolves append-only.
 
