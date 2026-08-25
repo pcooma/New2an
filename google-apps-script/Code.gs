@@ -1,1110 +1,269 @@
 /**
- * SICET 2026 Registration — Google Apps Script Backend
+ * NEW2AN 2026 Registration backend.
  *
- * HOW TO DEPLOY:
- * 1. Open https://script.google.com and create a new project named "SICET2026 Registration"
- * 2. Paste this entire file into Code.gs
- * 3. In Project Settings > Script properties set ADMIN_PASSWORD and, optionally, ADMIN_EMAIL
- * 4. Click Deploy → New deployment → Web app
- *    - Execute as: Me
- *    - Who has access: Anyone
- * 5. Authorise the script (Drive + Sheets access required)
- * 6. Copy the Web App URL and paste into APPS_SCRIPT_URL in app.js
+ * Before deployment, add these Script Properties:
+ *   MAIN_FOLDER_ID  ID of the NEW2AN Drive folder (created by setupNEW2AN if absent)
+ *   ADMIN_EMAIL     dashboard email (required)
+ *   ADMIN_PASSWORD  strong dashboard password (required)
  *
- * Drive folder structure:
- *   SICET 2026 Registrations/
- *   ├── SICET2026 Master Registrations  (Google Sheet)
- *   ├── SICET2026-XXXXXXX_LastName/
- *   │   ├── registration_data.json
- *   │   ├── invoice_v1.pdf, invoice_v2.pdf …  (versioned proforma invoices)
- *   │   ├── student_id_<filename>
- *   │   └── payment_proof_<filename>
- *   └── …
+ * Deploy as a Web app: execute as Me, access Anyone. Copy the /exec URL into
+ * CONFIG.apiUrl in app.js. Never reuse a folder belonging to another event.
  */
 
-const MAIN_FOLDER_ID    = '1REXNutSF3mzO7tRkg0tD0GjLqjUlhI-n';
-const MASTER_SHEET_NAME = 'SICET2026 Master Registrations';
-// Secrets must be stored in Apps Script > Project Settings > Script properties.
-// Required: ADMIN_PASSWORD. Optional: ADMIN_EMAIL (defaults to the conference admin).
-const ADMIN_EMAIL_DEFAULT = 'p.cooma@gmail.com';
+const CONFERENCE = 'NEW2AN 2026';
+const MAIN_FOLDER_NAME = 'NEW2AN 2026 - Registration Administration';
+const SHEET_NAME = 'NEW2AN 2026 - Master Registration Database';
+const SHEET_TAB_NAME = 'Registrations';
+const RECORDS_FOLDER = '01 - Participant Registration Records';
+const PAYMENT_PROOFS_FOLDER = '02 - Payment Proofs';
+const EARLY_DEADLINE = new Date('2026-10-31T23:59:59+05:30');
+const SCHEMA_VERSION = 1;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
-const ALLOWED_UPLOAD_MIME = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-const SETTINGS_FILE_NAME = 'sicet2026_settings.json';
-const SETTINGS_HISTORY_FOLDER_NAME = 'Settings History';
-const RECORD_SCHEMA_VERSION = 5;
-const MASTER_HEADERS = [
-  'Submission_Date', 'Invoice_ID', 'Status',
-  'Title', 'Full_Name', 'Email', 'Phone',
-  'Organization', 'Attendee_Region', 'Country', 'Attendee_Category',
-  'Registration_Type', 'Calculated_Total_Fee', 'Currency',
-  'Certificate_Name', 'Designation', 'Food_Preference', 'Number_of_Papers',
-  'Include_Inauguration',
-  'Company_Name', 'Participant_Count', 'Participant_Names', 'Award_Category',
-  'Primary_Reason', 'Primary_Reason_Other',
-  'Excursion_Local_Count', 'Excursion_Foreign_Count',
-  'Excursion_Mobility', 'Excursion_Activity',
-  'PreConf_Sessions', 'Workshop_Discount_Tier', 'Workshop_ID_File',
-  'Address', 'Bill_To', 'Billing_Org_Name', 'Billing_Tax_ID',
-  'Billing_Address', 'Billing_Finance_Email',
-  'Transaction_Ref', 'Additional_Info', 'Drive_Folder_URL',
-  // Append-only evolution fields. Never rename/remove older columns.
-  'Record_Schema_Version', 'Settings_Version', 'Attendee_Category_ID',
-  'PreConf_Session_IDs', 'Pricing_Snapshot',
-  'Conference_Workshops', 'Conference_Workshop_IDs',
-  'Paper_Details', 'CMT_Changes',
-  'Transport_Mode', 'Vehicle_Number'
+const ALLOWED_UPLOAD_MIME = ['application/pdf','image/jpeg','image/png','image/webp'];
+const HEADERS = [
+  'Submission_Date','Last_Updated','Reference_ID','Status','Payment_Status',
+  'Title','Full_Name','Certificate_Name','Email','Phone','Organization','Designation',
+  'Country_of_Residence','Nationality','International_Eligibility_Confirmed','Participant_Role',
+  'Attendance_Mode','Paper_Count','Paper_1_ID','Paper_1_Title','Paper_1_Presenter',
+  'Paper_2_ID','Paper_2_Title','Paper_2_Presenter','CMT_Changes','Registration_Fee','Currency','Fee_Basis',
+  'Workshop_Attendance','Future_Workshop_Updates','Workshop_Selections','Workshop_Notes',
+  'Passport_Name','Passport_Issuing_Country','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance','Room_Preference',
+  'Arrival_Date','Departure_Date','Arrival_Details','Departure_Details','Dietary_Preference',
+  'Venue_Transport','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone','Visit_Notes','Support_Category','Support_Reply_Method','Support_Request','Travel_Data_Consent',
+  'Excursion_Interest','Excursion_Participant_Count','Excursion_Participant_Names','Excursion_Group_Details',
+  'Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language','Excursion_Acknowledgement',
+  'Bill_To','Billing_Email','Billing_Address','Purchase_Order','Additional_Info',
+  'Payment_Stage','Transaction_Reference','Amount_Paid','Payment_Currency','Payment_Proof_Files',
+  'Policy_Agreement','Form_Schema_Version',
+  'Record_File_URL'
 ];
 
-/**
- * ONE-TIME MANUAL MIGRATION
- * Run this function once from the Apps Script editor before deploying the new
- * web-app version. It only appends missing headers to the existing master sheet;
- * it never deletes, reorders, or overwrites existing columns or registration rows.
- */
-function migrateMasterSheetSchema() {
-  const mainFolder = DriveApp.getFolderById(MAIN_FOLDER_ID);
-  const files = mainFolder.getFilesByName(MASTER_SHEET_NAME);
-  if (!files.hasNext()) {
-    return { success: true, message: 'No master sheet exists yet; the full schema will be created on first submission.', added: [] };
-  }
-
-  const sheet = SpreadsheetApp.openById(files.next().getId()).getActiveSheet();
-  const result = ensureMasterSheetSchema(sheet);
-  Logger.log(JSON.stringify(result));
-  return result;
-}
-
-function ensureMasterSheetSchema(sheet) {
-  const lastColumn = sheet.getLastColumn();
-  const existing = lastColumn > 0
-    ? sheet.getRange(1, 1, 1, lastColumn).getValues()[0].map(String)
-    : [];
-  const duplicates = existing.filter(function(header, index) {
-    return header && existing.indexOf(header) !== index;
-  });
-  if (duplicates.length) {
-    throw new Error('Master sheet has duplicate headers: ' + duplicates.join(', ') + '. Resolve these manually before writing.');
-  }
-  const missing = MASTER_HEADERS.filter(function(header) { return existing.indexOf(header) < 0; });
-  if (missing.length) {
-    sheet.getRange(1, lastColumn + 1, 1, missing.length).setValues([missing]);
-    SpreadsheetApp.flush();
-  }
-  return {
-    success: true,
-    existingColumnCount: existing.length,
-    addedColumnCount: missing.length,
-    finalColumnCount: existing.length + missing.length,
-    added: missing
-  };
-}
-
-// ---------------------------------------------------------------------------
-// POST — handles all write actions from the frontend
-// ---------------------------------------------------------------------------
-function doPost(e) {
-  // Use LockService to prevent concurrent writes corrupting the sheet
-  const lock = LockService.getScriptLock();
-  try {
-    lock.waitLock(15000); // wait up to 15 s
-  } catch (_) {
-    return jsonResponse({ success: false, error: 'Server busy — please retry in a moment.' });
-  }
-
-  try {
-    const data   = JSON.parse(e.postData.contents);
-    const action = data.action || 'submitRegistration';
-
-    if (action === 'adminLogin') return handleAdminLogin(data);
-
-    if (action === 'saveInvoice') {
-      return handleSaveInvoice(data);
-    }
-
-    if (action === 'saveSettings') {
-      return handleSaveSettings(data);
-    }
-
-    return handleSubmitRegistration(data);
-  } catch (err) {
-    Logger.log('doPost error: ' + err.toString());
-    return jsonResponse({ success: false, error: err.toString() });
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// GET — admin reads + health check
-// ---------------------------------------------------------------------------
 function doGet(e) {
-  const action = (e.parameter && e.parameter.action) || '';
-  const token  = (e.parameter && e.parameter.token)  || '';
-
-  if (action === 'getSubmissions') {
-    if (!verifyAdminToken(token)) return jsonResponse({ error: 'Unauthorized' });
-    try {
-      const mainFolder = DriveApp.getFolderById(MAIN_FOLDER_ID);
-      return jsonResponse({ success: true, submissions: getSubmissionsFromSheet(mainFolder) });
-    } catch (err) {
-      return jsonResponse({ error: err.toString() });
-    }
-  }
-
-  if (action === 'getRegistrationByRef') {
-    const ref = (e.parameter && e.parameter.ref) || '';
-    const email = (e.parameter && e.parameter.email) || '';
-    if (!ref || !email) return jsonResponse({ error: 'Reference ID and email are required' });
-    try {
-      const data = getRegistrationByRef(ref);
-      if (normaliseEmail(data.Email) !== normaliseEmail(email)) {
-        return jsonResponse({ success: false, error: 'Reference ID and email do not match' });
-      }
-      return jsonResponse({ success: true, data: data });
-    } catch (err) {
-      return jsonResponse({ success: false, error: err.toString() });
-    }
-  }
-
-  if (action === 'getSettings') {
-    try {
-      const mainFolder = DriveApp.getFolderById(MAIN_FOLDER_ID);
-      const result = readCurrentSettingsWithRecovery(mainFolder);
-      return jsonResponse({
-        success: true,
-        settings: result.settings,
-        recoveredFromHistory: result.recovered
-      });
-    } catch (err) {
-      return jsonResponse({ success: false, error: err.toString() });
-    }
-  }
-
-  if (action === 'getPaymentProofs') {
-    if (!verifyAdminToken(token)) return jsonResponse({ error: 'Unauthorized' });
-    const ref = (e.parameter && e.parameter.ref) || '';
-    if (!ref) return jsonResponse({ error: 'No ref provided' });
-    try {
-      const mainFolder = DriveApp.getFolderById(MAIN_FOLDER_ID);
-      const folders = mainFolder.getFolders();
-      while (folders.hasNext()) {
-        const folder = folders.next();
-        if (folder.getName().startsWith(ref + '_')) {
-          const proofFiles = [];
-          const fileIter = folder.getFiles();
-          while (fileIter.hasNext()) {
-            const f = fileIter.next();
-            if (f.getName().startsWith('payment_proof')) {
-              proofFiles.push({
-                name:     f.getName(),
-                fileId:   f.getId(),
-                mimeType: f.getMimeType(),
-                url:      f.getUrl()
-              });
-            }
-          }
-          return jsonResponse({ success: true, files: proofFiles });
-        }
-      }
-      return jsonResponse({ success: true, files: [] });
-    } catch (err) {
-      return jsonResponse({ success: false, error: err.toString() });
-    }
-  }
-
-  return jsonResponse({ status: 'SICET 2026 Registration API running' });
-}
-
-// ---------------------------------------------------------------------------
-// handleSubmitRegistration — create or upsert a registration record
-// ---------------------------------------------------------------------------
-function handleSubmitRegistration(data) {
-  const mainFolder = DriveApp.getFolderById(MAIN_FOLDER_ID);
-
-  const validation = validateRegistration(data, mainFolder);
-  if (!validation.valid) return jsonResponse({ success: false, error: validation.errors.join(' ') });
-  data = validation.data;
-
-  // Server-side deduplication: if no Invoice_ID supplied, check sheet for existing row with same email
-  if (!data.Invoice_ID) {
-    const existingId = findInvoiceIdByEmail(data.Email, mainFolder);
-    data.Invoice_ID = existingId || generateInvoiceId();
-  }
-
-  // Freeze the pricing definition used for this record. A later category,
-  // workshop, discount, or fee deletion must never reinterpret old invoices.
-  data = attachPricingSnapshot(data, mainFolder);
-
-  const nameParts = (data.Full_Name || 'Unknown').trim().split(/\s+/);
-  const lastName  = nameParts[nameParts.length - 1].replace(/[^a-zA-Z0-9]/g, '') || 'Attendee';
-  const folderName = data.Invoice_ID + '_' + lastName;
-
-  // Find or create the registrant's sub-folder
-  let userFolder;
-  userFolder = findFolderByRef(mainFolder, data.Invoice_ID) || mainFolder.createFolder(folderName);
-
-  const folderUrl = userFolder.getUrl();
-
-  // Save uploaded files
-  if (data.Student_ID_Base64 && data.Student_ID_Base64.data) {
-    replaceUploadedFilesSafely(userFolder, 'student_id_', [data.Student_ID_Base64], function() { return 'student_id_'; });
-    data.Student_ID_Base64 = '(uploaded — see folder)';
-  }
-  if (data.Workshop_ID_Base64 && data.Workshop_ID_Base64.data) {
-    replaceUploadedFilesSafely(userFolder, 'workshop_id_', [data.Workshop_ID_Base64], function() { return 'workshop_id_'; });
-    data.Workshop_ID_Base64 = '(uploaded — see folder)';
-  }
-  if (data.Payment_Proof_Base64) {
-    const proofs = Array.isArray(data.Payment_Proof_Base64)
-      ? data.Payment_Proof_Base64
-      : [data.Payment_Proof_Base64];
-    const validProofs = proofs.filter(p => p && p.data);
-    if (validProofs.length > 0) {
-      validProofs.forEach(function(proof, index) {
-        proof.name = buildPaymentProofName(data, index, proof.mimeType);
-      });
-      replaceUploadedFilesSafely(userFolder, 'payment_proof_', validProofs, function(index, total) {
-        return '';
-      });
-    }
-    if (validProofs.length > 0) data.Payment_Proof_Base64 = '(uploaded — see folder)';
-  }
-
-  data.Drive_Folder_URL = folderUrl;
-
-  // Safe replacement: create the new copy before retiring the last good copy.
-  replaceJsonFileSafely(userFolder, 'registration_data.json', data);
-
-  // Upsert row in master sheet
-  upsertMasterSheet(data, mainFolder, folderUrl);
-
-  return jsonResponse({ success: true, invoiceId: data.Invoice_ID, folderUrl: folderUrl });
-}
-
-// ---------------------------------------------------------------------------
-// handleSaveInvoice — version-controlled PDF save
-// ---------------------------------------------------------------------------
-function handleSaveInvoice(data) {
-  const mainFolder = DriveApp.getFolderById(MAIN_FOLDER_ID);
-
-  const nameParts = (data.Full_Name || 'Unknown').trim().split(/\s+/);
-  const lastName  = nameParts[nameParts.length - 1].replace(/[^a-zA-Z0-9]/g, '') || 'Attendee';
-  const folderName = (data.Invoice_ID || 'DRAFT') + '_' + lastName;
-
-  // Find or create folder
-  let userFolder;
-  if (!isValidRef(data.Invoice_ID) || !data.Email) return jsonResponse({ success: false, error: 'Valid reference ID and email required' });
-  const existing = findFolderByRef(mainFolder, data.Invoice_ID);
-  if (existing) {
-    const saved = getRegistrationByRef(data.Invoice_ID);
-    if (normaliseEmail(saved.Email) !== normaliseEmail(data.Email)) return jsonResponse({ success: false, error: 'Reference ID and email do not match' });
-  }
-  userFolder = existing || mainFolder.createFolder(folderName);
-
-  if (data.invoice_pdf && data.invoice_pdf.data) {
-    // Determine next version number
-    let maxVer = 0;
-    const files = userFolder.getFiles();
-    while (files.hasNext()) {
-      const fname = files.next().getName();
-      const m = fname.match(/invoice_v(\d+)\.pdf/i);
-      if (m) maxVer = Math.max(maxVer, parseInt(m[1]));
-    }
-    const nextVer = maxVer + 1;
-    const blob = Utilities.newBlob(
-      Utilities.base64Decode(data.invoice_pdf.data),
-      'application/pdf',
-      'invoice_v' + nextVer + '.pdf'
-    );
-    userFolder.createFile(blob);
-  }
-
-  return jsonResponse({ success: true });
-}
-
-// ---------------------------------------------------------------------------
-// handleSaveSettings — persist admin settings JSON to Drive
-// ---------------------------------------------------------------------------
-function handleSaveSettings(data) {
-  if (!verifyAdminToken(data.adminToken)) {
-    return jsonResponse({ success: false, error: 'Unauthorized' });
-  }
-  if (!data.settings) {
-    return jsonResponse({ success: false, error: 'No settings payload' });
-  }
+  const action = clean(e && e.parameter && e.parameter.action, 50);
   try {
-    const mainFolder = DriveApp.getFolderById(MAIN_FOLDER_ID);
-    const checked = validateSettings(data.settings);
-    if (!checked.valid) return jsonResponse({ success: false, error: checked.errors.join(' ') });
-
-    const settings = checked.settings;
-    const version = Utilities.getUuid();
-    settings._meta = {
-      schema_version: 2,
-      version: version,
-      saved_at: new Date().toISOString()
-    };
-
-    // Immutable audit copy first; current file is replaced only after that succeeds.
-    const historyFolder = getOrCreateChildFolder(mainFolder, SETTINGS_HISTORY_FOLDER_NAME);
-    historyFolder.createFile(
-      'settings_' + settings._meta.saved_at.replace(/[:.]/g, '-') + '_' + version + '.json',
-      JSON.stringify(settings, null, 2),
-      MimeType.PLAIN_TEXT
-    );
-    replaceJsonFileSafely(mainFolder, SETTINGS_FILE_NAME, settings);
-    return jsonResponse({ success: true, version: version, settingsMeta: settings._meta });
-  } catch (err) {
-    Logger.log('handleSaveSettings error: ' + err.toString());
-    return jsonResponse({ success: false, error: err.toString() });
-  }
+    if (action === 'getRegistration') return getRegistration(e.parameter);
+    if (action === 'getSubmissions') return getSubmissions(e.parameter);
+    if (action === 'getWorkshops') return json({success:true,workshops:readWorkshops()});
+    return json({success:true,status:CONFERENCE + ' Registration API running',schemaVersion:SCHEMA_VERSION});
+  } catch (error) { return json({success:false,error:safeError(error)}); }
 }
 
-function validateSettings(input) {
-  const settings = JSON.parse(JSON.stringify(input || {}));
-  const errors = [];
-  validateSettingsCollection(settings.categories, 'category', 'label', errors);
-  validateSettingsCollection(settings.pre_conference_sessions || [], 'workshop', 'name', errors);
-  validateSettingsCollection(settings.conference_workshops || [], 'conference workshop', 'name', errors);
-  validateSettingsCollection(settings.journals || [], 'journal', 'name', errors);
-  (settings.journals || []).forEach(function(journal) {
-    journal.apc_not_applicable = journal.apc_not_applicable === true;
-    if (journal.apc_not_applicable) journal.fee = 0;
-  });
-  if (!Array.isArray(settings.categories) || settings.categories.length === 0) {
-    errors.push('At least one attendee category is required.');
-  }
-  const rate = Number(settings.usd_to_lkr);
-  if (!isFinite(rate) || rate <= 0) errors.push('USD exchange rate must be greater than zero.');
-  validateNonNegativeNumbers(settings, '', errors);
-  return { valid: errors.length === 0, errors: errors, settings: settings };
-}
-
-function validateSettingsCollection(items, type, labelKey, errors) {
-  if (!Array.isArray(items)) {
-    errors.push('Settings ' + type + ' list is invalid.');
-    return;
-  }
-  const ids = {};
-  const labels = {};
-  items.forEach(function(item, index) {
-    const id = String((item && item.id) || '').trim();
-    const label = String((item && item[labelKey]) || '').trim();
-    if (!id) errors.push('Every ' + type + ' requires a stable ID (item ' + (index + 1) + ').');
-    if (!label) errors.push('Every ' + type + ' requires a name (item ' + (index + 1) + ').');
-    if (id && ids[id]) errors.push('Duplicate ' + type + ' ID: ' + id + '.');
-    if (label && labels[label.toLowerCase()]) errors.push('Duplicate ' + type + ' name: ' + label + '.');
-    ids[id] = true;
-    labels[label.toLowerCase()] = true;
-  });
-}
-
-function validateNonNegativeNumbers(value, path, errors) {
-  if (!value || typeof value !== 'object') return;
-  Object.keys(value).forEach(function(key) {
-    if (key === '_meta') return;
-    const child = value[key];
-    const childPath = path ? path + '.' + key : key;
-    if (typeof child === 'number' && (!isFinite(child) || child < 0)) {
-      errors.push(childPath + ' must be a non-negative number.');
-    } else if (child && typeof child === 'object') {
-      validateNonNegativeNumbers(child, childPath, errors);
-    }
-  });
-}
-
-function handleAdminLogin(data) {
-  const props = PropertiesService.getScriptProperties();
-  const expectedPassword = props.getProperty('ADMIN_PASSWORD');
-  const expectedEmail = normaliseEmail(props.getProperty('ADMIN_EMAIL') || ADMIN_EMAIL_DEFAULT);
-  if (!expectedPassword) return jsonResponse({ success: false, error: 'Admin login is not configured' });
-  if (normaliseEmail(data.email) !== expectedEmail || String(data.password || '') !== expectedPassword) {
-    return jsonResponse({ success: false, error: 'Invalid credentials' });
-  }
-  const expires = Date.now() + 8 * 60 * 60 * 1000;
-  const payload = Utilities.base64EncodeWebSafe(expectedEmail + '|' + expires);
-  const sig = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(payload, expectedPassword));
-  return jsonResponse({ success: true, token: payload + '.' + sig, expires: expires });
-}
-
-function verifyAdminToken(token) {
-  const password = PropertiesService.getScriptProperties().getProperty('ADMIN_PASSWORD');
-  if (!password || !token || token.indexOf('.') < 0) return false;
-  const parts = token.split('.');
-  if (parts.length !== 2) return false;
-  const expected = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(parts[0], password));
-  if (expected !== parts[1]) return false;
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(20000); } catch (_) { return json({success:false,error:'The server is busy. Please retry shortly.'}); }
   try {
-    const decoded = Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString();
-    const expires = Number(decoded.split('|').pop());
-    return isFinite(expires) && Date.now() < expires;
-  } catch (_) { return false; }
+    const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    if (body.action === 'adminLogin') return adminLogin(body);
+    if (body.action === 'saveWorkshops') return saveWorkshops(body);
+    if (body.action === 'submitRegistration') return saveRegistration(body.data || {});
+    return json({success:false,error:'Unsupported action.'});
+  } catch (error) { return json({success:false,error:safeError(error)}); }
+  finally { lock.releaseLock(); }
 }
 
-function normaliseEmail(value) { return String(value || '').trim().toLowerCase(); }
-function isValidRef(value) { return /^SICET2026-[A-Za-z0-9-]{6,30}$/.test(String(value || '')); }
+function saveRegistration(input) {
+  const data = normaliseRegistration(input);
+  const errors = validateRegistration(data);
+  if (errors.length) return json({success:false,error:errors.join(' ')});
+  const resources = getResources();
+  const sheet = resources.sheet;
+  const now = new Date();
+  const existing = findRow(sheet, data.Reference_ID, data.Email);
+  const referenceId = existing.referenceId || makeReferenceId();
+  data.Reference_ID = referenceId;
+  data.Submission_Date = existing.submissionDate || now.toISOString();
+  data.Last_Updated = now.toISOString();
+  const proofUrls = savePaymentProofs(resources.paymentProofsFolder, referenceId, data.Payment_Proof_Base64);
+  if (proofUrls.length) data.Payment_Proof_Files = proofUrls.join('\n');
+  else if (data.Payment_Proof_Base64 === '(uploaded — see folder)') data.Payment_Proof_Files = existing.paymentProofFiles || '(retained)';
+  delete data.Payment_Proof_Base64;
+  data.Status = existing.status || 'PENDING_PAYMENT_CONFIRMATION';
+  data.Payment_Status = existing.paymentStatus === 'CONFIRMED' ? 'CONFIRMED' : (data.Payment_Stage === 'NOT_PAID' ? 'AWAITING_PAYMENT' : 'PROOF_SUBMITTED');
+  data.Registration_Fee = feeFor(now);
+  data.Currency = 'EUR';
+  data.Fee_Basis = data.Registration_Fee === 400 ? 'AUTHOR_OR_EARLY_ON_OR_BEFORE_2026-10-31' : 'LATE_AFTER_2026-10-31';
+  data.Form_Schema_Version = SCHEMA_VERSION;
+  data.Record_File_URL = saveRecordFile(resources.recordsFolder, data);
+  const row = HEADERS.map(function(header) { return serialise(data[header]); });
+  if (existing.rowNumber) sheet.getRange(existing.rowNumber,1,1,HEADERS.length).setValues([row]);
+  else sheet.appendRow(row);
+  return json({success:true,referenceId:referenceId,status:data.Status,paymentStatus:data.Payment_Status});
+}
 
-function findFolderByRef(mainFolder, refId) {
-  const folders = mainFolder.getFolders();
-  while (folders.hasNext()) {
-    const folder = folders.next();
-    if (folder.getName().indexOf(refId + '_') === 0) return folder;
+function normaliseRegistration(input) {
+  const output = {};
+  HEADERS.forEach(function(header) { if (Object.prototype.hasOwnProperty.call(input,header)) output[header] = input[header]; });
+  ['Title','Full_Name','Certificate_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','CMT_Changes','Workshop_Attendance','Future_Workshop_Updates','Workshop_Notes','Passport_Name','Passport_Issuing_Country','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance','Room_Preference','Arrival_Date','Departure_Date','Arrival_Details','Departure_Details','Venue_Transport','Dietary_Preference','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone','Visit_Notes','Support_Category','Support_Reply_Method','Support_Request','Excursion_Interest','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language','Bill_To','Billing_Email','Billing_Address','Purchase_Order','Additional_Info','Payment_Stage','Transaction_Reference','Payment_Currency','Paper_1_ID','Paper_1_Title','Paper_2_ID','Paper_2_Title'].forEach(function(key) { output[key]=clean(output[key], key.indexOf('Notes') >= 0 || key.indexOf('Address') >= 0 || key.indexOf('Names') >= 0 || key.indexOf('Changes') >= 0 || key.indexOf('Request') >= 0 ? 2000 : 300); });
+  output.Email = output.Email.toLowerCase();
+  output.Billing_Email = output.Billing_Email.toLowerCase();
+  output.Reference_ID = clean(input.Reference_ID,40).toUpperCase();
+  output.Paper_Count = Math.max(0,Math.min(2,parseInt(input.Paper_Count,10)||0));
+  output.Excursion_Participant_Count = Math.max(0,Math.min(10,parseInt(input.Excursion_Participant_Count,10)||0));
+  output.Amount_Paid = Number(input.Amount_Paid || 0);
+  output.Payment_Proof_Base64 = input.Payment_Proof_Base64;
+  output.Payment_Currency = 'EUR';
+  output.Workshop_Selections = clean(input.Workshop_Selections,2000);
+  ['International_Eligibility_Confirmed','Travel_Data_Consent','Excursion_Acknowledgement','Policy_Agreement','Paper_1_Presenter','Paper_2_Presenter'].forEach(function(key){output[key]=input[key]===true||String(input[key]).toLowerCase()==='true';});
+  return output;
+}
+
+function validateRegistration(d) {
+  const errors=[];
+  ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','Bill_To','Billing_Address','Payment_Stage'].forEach(function(k){if(!d[k])errors.push(k.replace(/_/g,' ')+' is required.');});
+  if(d.Attendance_Mode==='In person in Colombo'&&(!d.Emergency_Contact_Name||!d.Emergency_Contact_Phone))errors.push('Emergency contact name and phone are required for in-person participants.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.Email)) errors.push('A valid email is required.');
+  if (!d.International_Eligibility_Confirmed || /^sri\s*lanka$/i.test(d.Country_of_Residence) || /^sri\s*lankan$/i.test(d.Nationality)) errors.push('This registration form is for participants who are not Sri Lankan citizens and do not live in Sri Lanka.');
+  if (d.Participant_Role === 'Author / presenting author' && d.Paper_Count < 1) errors.push('A presenting author must provide an accepted paper.');
+  if (d.Paper_Count && d.Participant_Role !== 'Author / presenting author') errors.push('Accepted papers require the author role.');
+  for (let i=1;i<=d.Paper_Count;i++){if(!d['Paper_'+i+'_ID']||!d['Paper_'+i+'_Title']||!d['Paper_'+i+'_Presenter'])errors.push('Paper '+i+' requires its CMT ID, title and presenter confirmation.');}
+  const help=/^Yes/.test(d.Travel_Agency_Assistance)||/^Yes/.test(d.Accommodation_Assistance);
+  if(help&&!d.Travel_Data_Consent)errors.push('Travel data consent is required for coordination requests.');
+  if(d.Arrival_Date&&d.Departure_Date&&d.Departure_Date<d.Arrival_Date)errors.push('Departure cannot be before arrival.');
+  if(/^Yes/.test(d.Visa_Support)&&(!d.Passport_Name||!d.Passport_Issuing_Country))errors.push('Passport name and issuing country are required for visa support.');
+  if(d.Attendance_Mode==='In person in Colombo'&&d.Excursion_Interest !== 'No'){
+    if(!Number.isInteger(d.Excursion_Participant_Count)||d.Excursion_Participant_Count<1||d.Excursion_Participant_Count>10)errors.push('Excursion participant count must be from 1 to 10.');
+    if(d.Excursion_Participant_Count>1&&!d.Excursion_Participant_Names)errors.push('List accompanying excursion participants.');
+    if(!d.Excursion_Acknowledgement)errors.push('Excursion acknowledgement is required.');
   }
-  return null;
+  const paid=d.Payment_Stage!=='NOT_PAID';
+  if(['NOT_PAID','PAID_GATEWAY','PAID_TRANSFER','PAID_OTHER'].indexOf(d.Payment_Stage)<0)errors.push('Select a valid payment stage.');
+  const proofs=Array.isArray(d.Payment_Proof_Base64)?d.Payment_Proof_Base64:[];
+  if(paid&&!d.Transaction_Reference)errors.push('Payment reference is required after payment.');
+  if(paid&&!(d.Amount_Paid>0))errors.push('Amount paid is required after payment.');
+  if(paid&&!proofs.length&&d.Payment_Proof_Base64!=='(uploaded — see folder)')errors.push('Proof of payment is required after payment.');
+  proofs.forEach(function(file){const issue=validateUpload(file);if(issue)errors.push(issue);});
+  if(!d.Policy_Agreement)errors.push('Policy agreement is required.');
+  if(d.Reference_ID&&!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(d.Reference_ID))errors.push('Invalid reference ID.');
+  return errors;
 }
 
-function validateUpload(fileObj, label, errors) {
-  if (!fileObj || !fileObj.data) return;
-  const encoded = String(fileObj.data).replace(/\s/g, '');
-  const padding = encoded.endsWith('==') ? 2 : (encoded.endsWith('=') ? 1 : 0);
-  const estimatedBytes = Math.floor(encoded.length * 0.75) - padding;
-  if (estimatedBytes > MAX_UPLOAD_BYTES) errors.push(label + ' exceeds 5 MB.');
-  const detectedMime = detectUploadMime(fileObj);
-  if (!detectedMime || ALLOWED_UPLOAD_MIME.indexOf(detectedMime) < 0) {
-    errors.push(label + ' is not a valid PDF, JPEG, PNG, or WebP file.');
-  } else {
-    // Canonicalise empty/generic MIME values reported by some mobile browsers
-    // and WhatsApp-downloaded files. The signature, not the filename, wins.
-    fileObj.mimeType = detectedMime;
-  }
+function getRegistration(params) {
+  const ref=clean(params.ref,40).toUpperCase(), email=clean(params.email,300).toLowerCase();
+  if(!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(ref)||!email)return json({success:false,error:'Reference ID and email are required.'});
+  const sheet=getResources().sheet, values=sheet.getDataRange().getValues();
+  const refIndex=HEADERS.indexOf('Reference_ID'),emailIndex=HEADERS.indexOf('Email');
+  for(let r=1;r<values.length;r++)if(String(values[r][refIndex])===ref&&String(values[r][emailIndex]).toLowerCase()===email){const out={};HEADERS.forEach(function(h,i){out[h]=values[r][i];});const hasProof=!!out.Payment_Proof_Files;delete out.Payment_Proof_Files;delete out.Record_File_URL;if(hasProof)out.Payment_Proof_Base64='(uploaded — see folder)';return json({success:true,data:out});}
+  return json({success:false,error:'No matching registration was found.'});
 }
 
-function detectUploadMime(fileObj) {
-  try {
-    const bytes = Utilities.base64Decode(String(fileObj.data || '').replace(/\s/g, ''));
-    if (bytes.length >= 5 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 && bytes[4] === 0x2D) return 'application/pdf';
-    if (bytes.length >= 3 && (bytes[0] & 0xFF) === 0xFF && (bytes[1] & 0xFF) === 0xD8 && (bytes[2] & 0xFF) === 0xFF) return 'image/jpeg';
-    if (bytes.length >= 8 && (bytes[0] & 0xFF) === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47 && bytes[4] === 0x0D && bytes[5] === 0x0A && bytes[6] === 0x1A && bytes[7] === 0x0A) return 'image/png';
-    if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp';
-  } catch (_) {}
+function adminLogin(body) {
+  const props=PropertiesService.getScriptProperties();
+  const expectedEmail=props.getProperty('ADMIN_EMAIL'), expectedPassword=props.getProperty('ADMIN_PASSWORD');
+  if(!expectedEmail||!expectedPassword)throw new Error('Admin credentials are not configured.');
+  if(clean(body.email,300).toLowerCase()!==expectedEmail.toLowerCase()||String(body.password||'')!==expectedPassword)return json({success:false,error:'Invalid credentials.'});
+  const token=Utilities.getUuid()+Utilities.getUuid(); CacheService.getScriptCache().put('admin:'+token,'1',21600);
+  return json({success:true,token:token});
+}
+
+function defaultWorkshops(){
+  return [{id:'seeing-through-ai-2026',title:'Seeing Through AI: Deep Learning for Computer Vision',date:'2026-07-21',time:'09:30–12:30',venue:'G906, New Building',fee:0,currency:'EUR',status:'completed',contact:'Mr. Amila Karunanayake, +94 77 443 9069'}];
+}
+
+function readWorkshops(){
+  const raw=PropertiesService.getScriptProperties().getProperty('WORKSHOPS_JSON');
+  if(!raw)return defaultWorkshops();
+  try{const parsed=JSON.parse(raw);return Array.isArray(parsed)?parsed:defaultWorkshops();}catch(_){return defaultWorkshops();}
+}
+
+function saveWorkshops(body){
+  if(!validToken(body.token))return json({success:false,error:'Unauthorized.'});
+  if(!Array.isArray(body.workshops)||body.workshops.length>20)return json({success:false,error:'Provide no more than 20 workshops.'});
+  const cleanRows=body.workshops.map(function(item,index){
+    const row={id:clean(item.id,80).toLowerCase().replace(/[^a-z0-9-]/g,'-'),title:clean(item.title,200),date:clean(item.date,20),time:clean(item.time,80),venue:clean(item.venue,200),fee:Number(item.fee||0),currency:clean(item.currency,10)||'EUR',status:clean(item.status,20),contact:clean(item.contact,200)};
+    if(!row.id||!row.title||!/^\d{4}-\d{2}-\d{2}$/.test(row.date)||['draft','open','closed','completed'].indexOf(row.status)<0||row.fee<0)throw new Error('Workshop '+(index+1)+' has invalid details.');
+    return row;
+  });
+  PropertiesService.getScriptProperties().setProperty('WORKSHOPS_JSON',JSON.stringify(cleanRows));
+  return json({success:true,workshops:cleanRows});
+}
+
+function getSubmissions(params) {
+  if(!validToken(params.token))return json({success:false,error:'Unauthorized.'});
+  const values=getResources().sheet.getDataRange().getValues(), rows=[];
+  for(let r=1;r<values.length;r++){const item={};HEADERS.forEach(function(h,i){item[h]=values[r][i];});rows.push(item);}
+  return json({success:true,submissions:rows.reverse()});
+}
+
+function validToken(token){return !!(token&&CacheService.getScriptCache().get('admin:'+token));}
+
+function getResources() {
+  const id=PropertiesService.getScriptProperties().getProperty('MAIN_FOLDER_ID');
+  if(!id)throw new Error('Run setupNEW2AN once to create and configure the NEW2AN Drive structure.');
+  const folder=DriveApp.getFolderById(id);
+  const sheetFiles=folder.getFilesByName(SHEET_NAME); let spreadsheet;
+  if(sheetFiles.hasNext())spreadsheet=SpreadsheetApp.openById(sheetFiles.next().getId());
+  else{spreadsheet=SpreadsheetApp.create(SHEET_NAME);DriveApp.getFileById(spreadsheet.getId()).moveTo(folder);}
+  const sheet=spreadsheet.getSheets()[0]; if(sheet.getName()!==SHEET_TAB_NAME)sheet.setName(SHEET_TAB_NAME); ensureSchema(sheet);
+  const folders=folder.getFoldersByName(RECORDS_FOLDER); const recordsFolder=folders.hasNext()?folders.next():folder.createFolder(RECORDS_FOLDER);
+  const proofFolders=folder.getFoldersByName(PAYMENT_PROOFS_FOLDER); const paymentProofsFolder=proofFolders.hasNext()?proofFolders.next():folder.createFolder(PAYMENT_PROOFS_FOLDER);
+  return {folder:folder,sheet:sheet,recordsFolder:recordsFolder,paymentProofsFolder:paymentProofsFolder};
+}
+
+function ensureSchema(sheet) {
+  if(sheet.getLastRow()===0){sheet.getRange(1,1,1,HEADERS.length).setValues([HEADERS]);sheet.setFrozenRows(1);return;}
+  const existing=sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(String);
+  const missing=HEADERS.filter(function(h){return existing.indexOf(h)<0;});
+  if(missing.length)sheet.getRange(1,existing.length+1,1,missing.length).setValues([missing]);
+  const finalHeaders=sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(String);
+  if(HEADERS.some(function(h,i){return finalHeaders[i]!==h;}))throw new Error('The NEW2AN master-sheet header order is incompatible. Use a new dedicated folder or repair the header row.');
+}
+
+function findRow(sheet, ref, email) {
+  const values=sheet.getDataRange().getValues();
+  const refIndex=HEADERS.indexOf('Reference_ID'),emailIndex=HEADERS.indexOf('Email'),proofIndex=HEADERS.indexOf('Payment_Proof_Files');
+  for(let r=1;r<values.length;r++)if((ref&&String(values[r][refIndex])===ref)||(!ref&&String(values[r][emailIndex]).toLowerCase()===String(email).toLowerCase()))return{rowNumber:r+1,referenceId:String(values[r][refIndex]),submissionDate:values[r][0],status:values[r][3],paymentStatus:values[r][4],paymentProofFiles:values[r][proofIndex]};
+  return {};
+}
+
+function validateUpload(file){
+  if(!file||!file.data)return 'A payment proof file is unreadable.';
+  if(ALLOWED_UPLOAD_MIME.indexOf(String(file.mimeType||''))<0)return 'Payment proof must be PDF, JPEG, PNG or WebP.';
+  if(Math.ceil(String(file.data).length*3/4)>MAX_UPLOAD_BYTES)return 'Each payment proof must be 5 MB or smaller.';
   return '';
 }
 
-function validateRegistration(input, mainFolder) {
-  const data = Object.assign({}, input || {});
-  const errors = [];
-  ['Full_Name','Email','Phone','Organization','Attendee_Region','Country','Attendee_Category','Registration_Type'].forEach(function(k) {
-    if (!String(data[k] || '').trim()) errors.push(k.replace(/_/g, ' ') + ' is required.');
-  });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(data.Email || ''))) errors.push('A valid email is required.');
-  if (['Local','SAARC','Non-SAARC'].indexOf(data.Attendee_Region) < 0) errors.push('Invalid attendee region.');
-  const transportMode = String(data.Transport_Mode || '').trim();
-  const validTransportModes = [
-    'Private Vehicle - Parking Required', 'Private Vehicle - No Parking',
-    'Ride-hailing / Taxi', 'Public Transport', 'Other / Arranged Transport',
-    'Private Vehicle' // legacy value from schema v5
-  ];
-  if (validTransportModes.indexOf(transportMode) < 0) errors.push('Select a transportation option.');
-  if ((transportMode === 'Private Vehicle - Parking Required' || transportMode === 'Private Vehicle') &&
-      !String(data.Vehicle_Number || '').trim()) {
-    errors.push('Vehicle registration number is required when on-campus parking is requested.');
-  }
-  if (String(data.Vehicle_Number || '').length > 30) errors.push('Vehicle registration number is too long.');
-  if (!isValidRef(data.Invoice_ID)) errors.push('Invalid reference ID.');
-  const registrationTypes = String(data.Registration_Type || '');
-  let settings = null;
-  let todayColombo = '';
-  const hasPreConferenceSelection = hasRegistrationType(registrationTypes, 'Pre-Conference Workshops') && String(data.PreConf_Session_IDs || '').trim();
-  const hasConferenceSelection = hasRegistrationType(registrationTypes, 'Conference Workshops') && String(data.Conference_Workshop_IDs || '').trim();
-  const hasMainRegistration = hasRegistrationType(registrationTypes, 'Main');
-  if (hasMainRegistration || hasPreConferenceSelection || hasConferenceSelection) {
-    settings = readCurrentSettings(mainFolder);
-    todayColombo = Utilities.formatDate(new Date(), 'Asia/Colombo', 'yyyy-MM-dd');
-  }
-  if (hasMainRegistration) {
-    const categories = settings.categories || [];
-    const category = categories.find(function(item) {
-      return (data.Attendee_Category_ID && item.id === data.Attendee_Category_ID) || item.label === data.Attendee_Category;
-    });
-    validateAuthorPaperDetails(data, category, errors);
-  }
-  const existing = data.Invoice_ID ? findFolderByRef(mainFolder, data.Invoice_ID) : null;
-  let saved = null;
-  if (existing) {
-    try { saved = getRegistrationByRef(data.Invoice_ID); } catch (_) {}
-  }
-  if (hasRegistrationType(registrationTypes, 'Pre-Conference Workshops') &&
-      !String(data.PreConf_Session_IDs || data.PreConf_Sessions || '').trim()) {
-    errors.push('Select at least one pre-conference workshop.');
-  }
-  if (hasPreConferenceSelection) {
-    validateEventSelections(data.PreConf_Session_IDs, settings.pre_conference_sessions || [], saved && saved.PreConf_Session_IDs, todayColombo, 'pre-conference workshop', errors);
-  }
-  if (hasRegistrationType(registrationTypes, 'Conference Workshops') && !String(data.Conference_Workshop_IDs || '').trim()) {
-    errors.push('Select at least one technical workshop during the conference.');
-  }
-  if (hasConferenceSelection) {
-    validateEventSelections(data.Conference_Workshop_IDs, settings.conference_workshops || [], saved && saved.Conference_Workshop_IDs, todayColombo, 'conference workshop', errors);
-  }
-  if (hasRegistrationType(registrationTypes, 'Excursion')) {
-    const excursionCount = data.Attendee_Region === 'Local'
-      ? Number(data.Excursion_Local_Count || 0)
-      : Number(data.Excursion_Foreign_Count || 0);
-    if (!isFinite(excursionCount) || excursionCount < 1) {
-      errors.push('Excursion registration requires at least one participant.');
-    }
-  }
-  if (hasRegistrationType(registrationTypes, 'Award')) {
-    const awardCount = Number(data.Participant_Count || 0);
-    if (!isFinite(awardCount) || Math.floor(awardCount) !== awardCount || awardCount < 1) {
-      errors.push('Excellence Award registration requires at least one participant.');
-    }
-  }
-  if (existing) {
-    try {
-      if (!saved) saved = getRegistrationByRef(data.Invoice_ID);
-      if (normaliseEmail(saved.Email) !== normaliseEmail(data.Email)) errors.push('Reference ID and email do not match.');
-    } catch (_) { errors.push('Existing registration could not be verified.'); }
-  }
-  validateUpload(data.Student_ID_Base64, 'Student ID', errors);
-  validateUpload(data.Workshop_ID_Base64, 'Workshop ID', errors);
-  const proofs = Array.isArray(data.Payment_Proof_Base64) ? data.Payment_Proof_Base64 : [data.Payment_Proof_Base64];
-  proofs.forEach(function(p, i) { validateUpload(p, 'Payment proof ' + (i + 1), errors); });
-  data.Submission_Date = new Date().toISOString();
-  return { valid: errors.length === 0, errors: errors, data: data };
-}
-
-function validateAuthorPaperDetails(data, category, errors) {
-  if (!category || category.no_papers || category.is_workshop_only) return;
-  const paperCount = Number(data.Number_of_Papers);
-  if (!isFinite(paperCount) || Math.floor(paperCount) !== paperCount || paperCount < 1 || paperCount > 10) {
-    errors.push('Author registrations require a valid number of papers between 1 and 10.');
-    return;
-  }
-  for (let paperIndex = 1; paperIndex <= paperCount; paperIndex++) {
-    if (!String(data['Paper_' + paperIndex + '_ID'] || '').trim()) errors.push('Paper ' + paperIndex + ' ID is required.');
-    if (!String(data['Paper_' + paperIndex + '_Title'] || '').trim()) errors.push('Paper ' + paperIndex + ' title is required.');
-  }
-}
-
-function validateEventSelections(requestedValue, configuredItems, savedValue, today, label, errors) {
-  const requested = String(requestedValue || '').split(',').map(function(value) { return value.trim(); }).filter(Boolean);
-  const savedIds = String(savedValue || '').split(',').map(function(value) { return value.trim(); }).filter(Boolean);
-  requested.forEach(function(id) {
-    const item = configuredItems.find(function(candidate) { return candidate.id === id; });
-    const currentlyAvailable = item && item.active !== false && (!item.event_date || item.event_date >= today);
-    if (!currentlyAvailable && savedIds.indexOf(id) < 0) errors.push('Selected ' + label + ' is unavailable or expired. Refresh and choose an active option.');
-  });
-}
-
-function hasRegistrationType(value, expected) {
-  return String(value || '').split('+').map(function(type) { return type.trim(); }).indexOf(expected) >= 0;
-}
-
-function readCurrentSettings(mainFolder) {
-  return readCurrentSettingsWithRecovery(mainFolder).settings;
-}
-
-function readCurrentSettingsWithRecovery(mainFolder) {
-  const files = mainFolder.getFilesByName(SETTINGS_FILE_NAME);
-  if (files.hasNext()) {
-    return {
-      settings: JSON.parse(files.next().getBlob().getDataAsString()),
-      recovered: false
-    };
-  }
-
-  // If a previous replacement was interrupted, recover the newest immutable
-  // history version and recreate the canonical current settings file.
-  const historyFolders = mainFolder.getFoldersByName(SETTINGS_HISTORY_FOLDER_NAME);
-  if (historyFolders.hasNext()) {
-    const historyFiles = historyFolders.next().getFiles();
-    let newest = null;
-    while (historyFiles.hasNext()) {
-      const candidate = historyFiles.next();
-      if (!newest || candidate.getDateCreated().getTime() > newest.getDateCreated().getTime()) {
-        newest = candidate;
-      }
-    }
-    if (newest) {
-      const recoveredSettings = JSON.parse(newest.getBlob().getDataAsString());
-      replaceJsonFileSafely(mainFolder, SETTINGS_FILE_NAME, recoveredSettings);
-      return { settings: recoveredSettings, recovered: true };
-    }
-  }
-
-  throw new Error('No pricing settings file or settings history found. Ask an administrator to save settings once.');
-}
-
-function attachPricingSnapshot(data, mainFolder) {
-  const settings = readCurrentSettings(mainFolder);
-  const categories = settings.categories || [];
-  const category = categories.find(function(item) {
-    return (data.Attendee_Category_ID && item.id === data.Attendee_Category_ID) ||
-      item.label === data.Attendee_Category;
-  });
-  const existingFolder = data.Invoice_ID ? findFolderByRef(mainFolder, data.Invoice_ID) : null;
-
-  if (!category && existingFolder) {
-    // A returning registrant may legitimately reference a category that has
-    // since been retired. Preserve its immutable snapshot instead of applying
-    // a different live category or deleting historical meaning.
-    const saved = getRegistrationByRef(data.Invoice_ID);
-    if (saved.Pricing_Snapshot) {
-      data.Record_Schema_Version = saved.Record_Schema_Version || RECORD_SCHEMA_VERSION;
-      data.Settings_Version = saved.Settings_Version || '';
-      data.Attendee_Category_ID = saved.Attendee_Category_ID || '';
-      data.PreConf_Session_IDs = data.PreConf_Session_IDs || saved.PreConf_Session_IDs || '';
-      data.Pricing_Snapshot = saved.Pricing_Snapshot;
-      let historicalCategory = null;
-      try { historicalCategory = JSON.parse(saved.Pricing_Snapshot).category || null; } catch (_) {}
-      return normalizeConditionalRegistration(data, historicalCategory);
-    }
-  }
-  if (!category) throw new Error('Selected attendee category is no longer available. Refresh and choose an active category.');
-
-  const requestedSessionIds = String(data.PreConf_Session_IDs || '').split(',').map(function(id) {
-    return id.trim();
-  }).filter(Boolean);
-  const requestedSessionNames = String(data.PreConf_Sessions || '').split(',').map(function(name) {
-    return name.trim();
-  }).filter(Boolean);
-  const selectedSessions = (settings.pre_conference_sessions || []).filter(function(session) {
-    return requestedSessionIds.indexOf(session.id) >= 0 || requestedSessionNames.indexOf(session.name) >= 0;
-  });
-  const requestedConferenceIds = String(data.Conference_Workshop_IDs || '').split(',').map(function(id) { return id.trim(); }).filter(Boolean);
-  const selectedConferenceWorkshops = (settings.conference_workshops || []).filter(function(workshop) {
-    return requestedConferenceIds.indexOf(workshop.id) >= 0;
-  });
-
-  data.Record_Schema_Version = RECORD_SCHEMA_VERSION;
-  data.Settings_Version = settings._meta && settings._meta.version || 'legacy-unversioned';
-  data.Attendee_Category_ID = category.id;
-  data.PreConf_Session_IDs = selectedSessions.map(function(session) { return session.id; }).join(', ');
-  data.PreConf_Sessions = selectedSessions.map(function(session) { return session.name; }).join(', ');
-  if (hasRegistrationType(String(data.Registration_Type || ''), 'Main') && !category.no_papers && !category.is_workshop_only) {
-    const paperCount = Math.max(1, Math.min(10, Number(data.Number_of_Papers) || 1));
-    const paperDetails = [];
-    for (let paperIndex = 1; paperIndex <= paperCount; paperIndex++) {
-      paperDetails.push('[' + String(data['Paper_' + paperIndex + '_ID'] || '').trim() + '] ' + String(data['Paper_' + paperIndex + '_Title'] || '').trim());
-    }
-    data.Paper_Details = paperDetails.join(' | ');
-  } else {
-    data.Paper_Details = '';
-  }
-  const savedRecord = existingFolder ? getRegistrationByRef(data.Invoice_ID) : null;
-  data.Conference_Workshop_IDs = selectedConferenceWorkshops.length
-    ? selectedConferenceWorkshops.map(function(workshop) { return workshop.id; }).join(', ')
-    : (savedRecord && savedRecord.Conference_Workshop_IDs || '');
-  data.Conference_Workshops = selectedConferenceWorkshops.length
-    ? selectedConferenceWorkshops.map(function(workshop) { return workshop.name; }).join(', ')
-    : (savedRecord && savedRecord.Conference_Workshops || '');
-  const authoritative = calculateAuthoritativeFee(data, settings, category, selectedSessions);
-  data.Calculated_Total_Fee = authoritative.total.toFixed(2);
-  data.Currency = authoritative.currency;
-  const paymentProofs = Array.isArray(data.Payment_Proof_Base64) ? data.Payment_Proof_Base64 : [data.Payment_Proof_Base64];
-  const hasPaymentProof = paymentProofs.some(function(proof) { return proof && proof.data; }) || data.Payment_Proof_Base64 === '(uploaded — see folder)';
-  data.Status = authoritative.total > 0 ? (hasPaymentProof ? 'Payment Proof Submitted' : 'Pending Payment') : 'Submitted';
-  data.Pricing_Snapshot = JSON.stringify({
-    settings_version: data.Settings_Version,
-    captured_at: new Date().toISOString(),
-    category: category,
-    discounts: settings.discounts || {},
-    award_fee: settings.award_fee || 0,
-    inauguration_fee: settings.inauguration_fee || 0,
-    inauguration_fee_usd: settings.inauguration_fee_usd || 0,
-    excursion_fees: settings.excursion_fees || {},
-    selected_workshops: selectedSessions,
-    selected_conference_workshops: selectedConferenceWorkshops,
-    journals: settings.journals || [],
-    usd_to_lkr: settings.usd_to_lkr || 0
-  });
-  return normalizeConditionalRegistration(data, category);
-}
-
-function calculateAuthoritativeFee(data, settings, category, selectedSessions) {
-  const registrationTypes = String(data.Registration_Type || '');
-  const isLocal = data.Attendee_Region === 'Local';
-  const currency = isLocal ? 'LKR' : 'USD';
-  const fx = Number(settings.usd_to_lkr || 0);
-  function convert(amount, sourceCurrency) {
-    if (sourceCurrency === currency) return amount;
-    return currency === 'LKR' ? Math.round(amount * fx) : Number((amount / fx).toFixed(2));
-  }
-  let total = 0;
-  if (hasRegistrationType(registrationTypes, 'Main') && !category.is_workshop_only) {
-    const baseFee = Number(isLocal ? category.fee_local : (data.Attendee_Region === 'SAARC' ? category.fee_saarc : category.fee_nonsaarc)) || 0;
-    const paperCount = category.no_papers ? 1 : Math.max(1, Math.min(10, Number(data.Number_of_Papers) || 1));
-    if (category.no_papers || paperCount === 1) total += baseFee;
-    else {
-      const discountPct = category.paper_discount ? Number(settings.discounts && settings.discounts.student_from_2nd || 0) : 0;
-      const maxDiscounted = Number(settings.discounts && settings.discounts.discount_max_papers || 0);
-      const discountedCount = discountPct > 0 ? (maxDiscounted > 0 ? Math.min(paperCount - 1, maxDiscounted) : paperCount - 1) : 0;
-      total += baseFee + discountedCount * baseFee * (1 - discountPct / 100) + (paperCount - 1 - discountedCount) * baseFee;
-    }
-    if (!category.no_papers) {
-      (settings.journals || []).forEach(function(journal) {
-        for (let i = 1; i <= paperCount; i++) {
-          const include = data['Paper_' + i + '_Include_APC'];
-          if (include && String(data['Paper_' + i + '_Journal'] || '') === journal.name && journal.apc_not_applicable !== true) {
-            total += convert(Number(journal.fee) || 0, 'USD');
-          }
-        }
-      });
-    }
-    if (data.Include_Inauguration) total += Number(isLocal ? settings.inauguration_fee : settings.inauguration_fee_usd) || 0;
-  }
-  if (hasRegistrationType(registrationTypes, 'Pre-Conference Workshops')) {
-    const tier = String(data.Workshop_Discount_Tier || 'regular');
-    selectedSessions.forEach(function(session) {
-      const raw = Number(isLocal ? session.fee_local : (data.Attendee_Region === 'SAARC' ? session.fee_saarc : session.fee_nonsaarc)) || 0;
-      const discount = tier === 'academic' ? Number(session.academic_discount_pct || 0) : (tier === 'student' ? Number(session.student_discount_pct || 0) : 0);
-      total += isLocal ? Math.round(raw * (1 - discount / 100)) : Number((raw * (1 - discount / 100)).toFixed(2));
-    });
-  }
-  if (hasRegistrationType(registrationTypes, 'Award')) {
-    total += convert((Number(settings.award_fee) || 0) * (Number(data.Participant_Count) || 0), 'LKR');
-  }
-  if (hasRegistrationType(registrationTypes, 'Excursion')) {
-    total += isLocal
-      ? (Number(settings.excursion_fees && settings.excursion_fees.local) || 0) * (Number(data.Excursion_Local_Count) || 0)
-      : (Number(settings.excursion_fees && settings.excursion_fees.foreigner) || 0) * (Number(data.Excursion_Foreign_Count) || 0);
-  }
-  return { total: Number(total.toFixed(2)), currency: currency };
-}
-
-function normalizeConditionalRegistration(data, category) {
-  const registrationTypes = String(data.Registration_Type || '');
-  const hasMain = hasRegistrationType(registrationTypes, 'Main');
-  const hasAward = hasRegistrationType(registrationTypes, 'Award');
-  const hasExcursion = hasRegistrationType(registrationTypes, 'Excursion');
-  const hasPreConf = hasRegistrationType(registrationTypes, 'Pre-Conference Workshops');
-  const hasConferenceWorkshops = hasRegistrationType(registrationTypes, 'Conference Workshops');
-
-  if (!hasMain) {
-    data.Number_of_Papers = '0';
-    data.Paper_Details = '';
-    data.CMT_Changes = '';
-    data.Include_Inauguration = '';
-    Object.keys(data).forEach(function(key) {
-      if (/^Paper_\d+_/.test(key)) delete data[key];
-    });
-  }
-  if (!hasAward) {
-    data.Company_Name = '';
-    data.Participant_Count = '0';
-    data.Participant_Names = '';
-    data.Award_Category = '';
-    data.Primary_Reason = '';
-    data.Primary_Reason_Other = '';
-  }
-  if (!hasExcursion) {
-    data.Excursion_Local_Count = '0';
-    data.Excursion_Foreign_Count = '0';
-    data.Mobility_Requirements = '';
-    data.Preferred_Activity = '';
-  }
-  if (!hasPreConf) {
-    Object.keys(data).forEach(function(key) {
-      if (/^PreConf_/.test(key)) delete data[key];
-    });
-    data.PreConf_Sessions = '';
-    data.PreConf_Session_IDs = '';
-    data.Workshop_Discount_Tier = 'regular';
-  }
-  if (!hasConferenceWorkshops) {
-    data.Conference_Workshops = '';
-    data.Conference_Workshop_IDs = '';
-  }
-  if (category && (category.no_papers || category.is_workshop_only)) {
-    data.Number_of_Papers = '0';
-    data.Paper_Details = '';
-    data.CMT_Changes = '';
-    Object.keys(data).forEach(function(key) {
-      if (/^Paper_\d+_/.test(key)) delete data[key];
-    });
-  }
-  if (!category || !category.is_student) {
-    data.Include_Inauguration = '';
-  }
-  data.Transport_Mode = String(data.Transport_Mode || '').trim();
-  data.Vehicle_Number = String(data.Vehicle_Number || '').trim().toUpperCase();
-  if (data.Transport_Mode !== 'Private Vehicle - Parking Required' && data.Transport_Mode !== 'Private Vehicle') {
-    data.Vehicle_Number = '';
-  }
-  if (data.Attendee_Region === 'Local') {
-    data.Excursion_Foreign_Count = '0';
-  } else if (data.Attendee_Region) {
-    data.Excursion_Local_Count = '0';
-  }
-  return data;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function upsertMasterSheet(data, mainFolder, folderUrl) {
-  let spreadsheet;
-  const files = mainFolder.getFilesByName(MASTER_SHEET_NAME);
-  if (files.hasNext()) {
-    spreadsheet = SpreadsheetApp.openById(files.next().getId());
-  } else {
-    spreadsheet = SpreadsheetApp.create(MASTER_SHEET_NAME);
-    const ssFile = DriveApp.getFileById(spreadsheet.getId());
-    mainFolder.addFile(ssFile);
-    DriveApp.getRootFolder().removeFile(ssFile);
-    spreadsheet.getActiveSheet().appendRow(MASTER_HEADERS);
-  }
-
-  const sheet  = spreadsheet.getActiveSheet();
-  ensureMasterSheetSchema(sheet);
-  const values = sheet.getDataRange().getValues();
-  const headers = values[0];
-  const idCol   = headers.indexOf('Invoice_ID');
-
-  // Look for existing row with same Invoice_ID to upsert
-  if (idCol >= 0) {
-    for (let r = 1; r < values.length; r++) {
-      if (values[r][idCol] === data.Invoice_ID) {
-        // Overwrite existing row
-        sheet.getRange(r + 1, 1, 1, headers.length).setValues([buildRow(headers, data, folderUrl)]);
-        return;
-      }
-    }
-  }
-
-  // No existing row — append new
-  sheet.appendRow(buildRow(headers, data, folderUrl));
-}
-
-function buildRow(headers, data, folderUrl) {
-  const map = {
-    Submission_Date:       data.Submission_Date       || '',
-    Invoice_ID:            data.Invoice_ID             || '',
-    Status:                data.Status                 || 'Submitted',
-    Title:                 data.Title                  || '',
-    Full_Name:             data.Full_Name              || '',
-    Email:                 data.Email                  || '',
-    Phone:                 data.Phone                  || '',
-    Organization:          data.Organization           || '',
-    Attendee_Region:       data.Attendee_Region        || '',
-    Country:               data.Country                || '',
-    Attendee_Category:     data.Attendee_Category      || '',
-    Transport_Mode:        data.Transport_Mode         || '',
-    Vehicle_Number:        data.Vehicle_Number         || '',
-    Registration_Type:     data.Registration_Type      || '',
-    Calculated_Total_Fee:  data.Calculated_Total_Fee   || '',
-    Currency:              data.Currency               || '',
-    Certificate_Name:      data.Certificate_Name       || '',
-    Designation:           data.Designation            || '',
-    Food_Preference:       data.Food_Preference        || '',
-    Number_of_Papers:      data.Number_of_Papers       || '',
-    Include_Inauguration:  data.Include_Inauguration   || '',
-    Company_Name:          data.Company_Name           || '',
-    Participant_Count:     data.Participant_Count      || '',
-    Participant_Names:     data.Participant_Names      || '',
-    Award_Category:        data.Award_Category         || '',
-    Primary_Reason:        data.Primary_Reason         || '',
-    Primary_Reason_Other:  data.Primary_Reason_Other   || '',
-    Excursion_Local_Count: data.Excursion_Local_Count  || '',
-    Excursion_Foreign_Count: data.Excursion_Foreign_Count || '',
-    Excursion_Mobility:    data.Excursion_Mobility     || '',
-    Excursion_Activity:    data.Excursion_Activity     || '',
-    PreConf_Sessions:      data.PreConf_Sessions       || '',
-    Workshop_Discount_Tier: data.Workshop_Discount_Tier || 'regular',
-    Workshop_ID_File:      data.Workshop_ID_Base64     || '',
-    Address:               data.Address                || '',
-    Bill_To:               data.Bill_To                || '',
-    Billing_Org_Name:      data.Billing_Org_Name       || '',
-    Billing_Tax_ID:        data.Billing_Tax_ID         || '',
-    Billing_Address:       data.Billing_Address        || '',
-    Billing_Finance_Email: data.Billing_Finance_Email  || '',
-    Transaction_Ref:       data.Transaction_Ref        || '',
-    Additional_Info:       data.Additional_Info        || '',
-    Drive_Folder_URL:      folderUrl                   || '',
-    Record_Schema_Version: data.Record_Schema_Version  || '',
-    Settings_Version:      data.Settings_Version       || '',
-    Attendee_Category_ID:  data.Attendee_Category_ID   || '',
-    PreConf_Session_IDs:   data.PreConf_Session_IDs    || '',
-    Pricing_Snapshot:      data.Pricing_Snapshot       || '',
-    Conference_Workshops: data.Conference_Workshops || '',
-    Conference_Workshop_IDs: data.Conference_Workshop_IDs || '',
-    Paper_Details:        data.Paper_Details          || '',
-    CMT_Changes:          data.CMT_Changes            || ''
-  };
-  return headers.map(h => map[h] !== undefined ? map[h] : (data[h] || ''));
-}
-
-function saveFileToFolder(folder, prefix, fileObj) {
-  const blob = Utilities.newBlob(
-    Utilities.base64Decode(fileObj.data),
-    fileObj.mimeType || 'application/octet-stream',
-    prefix + (fileObj.name || 'file')
-  );
-  return folder.createFile(blob);
-}
-
-function uploadExtension(mimeType) {
-  return {
-    'application/pdf': '.pdf',
-    'image/jpeg': '.jpg',
-    'image/png': '.png',
-    'image/webp': '.webp'
-  }[mimeType] || '';
-}
-
-function safeFilenameToken(value, maxLength) {
-  const token = String(value || '')
-    .trim()
-    .replace(/&/g, ' and ')
-    .replace(/[^A-Za-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'Unknown';
-  return token.substring(0, maxLength || 40).replace(/-+$/g, '');
-}
-
-function buildPaymentProofName(data, index, mimeType, dateValue) {
-  const productMap = {
-    'Main': 'Main-Conference',
-    'Award': 'Excellence-Award',
-    'Excursion': 'Excursion',
-    'Pre-Conference Workshops': 'PreConf-Workshops',
-    'Conference Workshops': 'Conference-Workshops'
-  };
-  const products = String(data.Registration_Type || '')
-    .split('+')
-    .map(function(value) { return productMap[value.trim()] || safeFilenameToken(value, 30); })
-    .filter(Boolean)
-    .join('_') || 'Registration';
-  const productToken = products.substring(0, 90).replace(/_+$/g, '');
-  const category = safeFilenameToken(data.Attendee_Category || data.Attendee_Category_ID || 'Unknown-Category', 36);
-  const categoryId = String(data.Attendee_Category_ID || '').toLowerCase();
-  const categoryLabel = String(data.Attendee_Category || '').toLowerCase();
-  const isAuthor = categoryId === 'author' || categoryId === 'student' ||
-    categoryLabel === 'general author' || categoryLabel === 'student author';
-  const paperIds = [];
-  const paperCount = Math.max(0, Math.min(10, Number(data.Number_of_Papers) || 0));
-  for (let paperIndex = 1; paperIndex <= paperCount; paperIndex++) {
-    const paperId = String(data['Paper_' + paperIndex + '_ID'] || '').trim();
-    if (paperId) paperIds.push(safeFilenameToken(paperId, 18));
-  }
-  const paperToken = isAuthor
-    ? (paperIds.length ? 'Papers-' + safeFilenameToken(paperIds.join('-'), 60) : 'Paper-ID-Unavailable')
-    : '';
-  const dateToken = Utilities.formatDate(dateValue || new Date(), 'Asia/Colombo', 'yyyy-MM-dd');
-  const reference = safeFilenameToken(data.Invoice_ID || 'No-Reference', 32);
-  const sequence = String(index + 1).padStart(2, '0');
-  return [
-    'payment-proof', category, productToken, paperToken,
-    dateToken, reference, sequence
-  ].filter(Boolean).join('_') + uploadExtension(mimeType);
-}
-
-function replaceUploadedFilesSafely(folder, existingPrefix, uploads, prefixForIndex) {
-  const existingFiles = folder.getFiles();
-  const oldFileIds = [];
-  while (existingFiles.hasNext()) {
-    const existingFile = existingFiles.next();
-    if (existingFile.getName().indexOf(existingPrefix) === 0) oldFileIds.push(existingFile.getId());
-  }
-
-  const createdFiles = [];
+function savePaymentProofs(recordsFolder,referenceId,uploads){
+  if(!Array.isArray(uploads)||!uploads.length)return [];
+  const named=recordsFolder.getFoldersByName(referenceId), folder=named.hasNext()?named.next():recordsFolder.createFolder(referenceId);
+  const oldFiles=[], existing=folder.getFiles();while(existing.hasNext())oldFiles.push(existing.next());
+  const created=[];
   try {
-    uploads.forEach(function(upload, index) {
-      createdFiles.push(saveFileToFolder(folder, prefixForIndex(index, uploads.length), upload));
+    uploads.forEach(function(file,index){
+      const safeName=clean(file.name,120).replace(/[^A-Za-z0-9._-]/g,'_')||('proof_'+(index+1));
+      const blob=Utilities.newBlob(Utilities.base64Decode(file.data),file.mimeType,'new_payment_proof_'+Date.now()+'_'+(index+1)+'_'+safeName);
+      created.push(folder.createFile(blob));
     });
-  } catch (err) {
-    createdFiles.forEach(function(file) { file.setTrashed(true); });
-    throw err;
+    oldFiles.forEach(function(file){file.setTrashed(true);});
+    created.forEach(function(file){file.setName(file.getName().replace(/^new_/,''));});
+    return created.map(function(file){return file.getUrl();});
+  } catch(error) {
+    created.forEach(function(file){try{file.setTrashed(true);}catch(_){}});
+    throw error;
   }
-
-  oldFileIds.forEach(function(fileId) { DriveApp.getFileById(fileId).setTrashed(true); });
-  return createdFiles;
 }
 
-function deleteFilesByName(folder, name) {
-  const files = folder.getFilesByName(name);
-  while (files.hasNext()) files.next().setTrashed(true);
+function saveRecordFile(folder,data) {
+  const name=data.Reference_ID+'.json', files=folder.getFilesByName(name), body=JSON.stringify(data,null,2);
+  if(files.hasNext()){const file=files.next();file.setContent(body);return file.getUrl();}
+  return folder.createFile(name,body,MimeType.PLAIN_TEXT).getUrl();
 }
 
-function replaceJsonFileSafely(folder, targetName, value) {
-  const tempName = targetName + '.new.' + Utilities.getUuid();
-  // Materialise the old file IDs before creating/renaming the replacement.
-  // Drive iterators can be live, so retaining the iterator itself is unsafe:
-  // it may later include the newly renamed file and trash the replacement.
-  const oldFiles = folder.getFilesByName(targetName);
-  const oldFileIds = [];
-  while (oldFiles.hasNext()) oldFileIds.push(oldFiles.next().getId());
-  const temp = folder.createFile(tempName, JSON.stringify(value, null, 2), MimeType.PLAIN_TEXT);
-  temp.setName(targetName);
-  oldFileIds.forEach(function(fileId) {
-    if (fileId !== temp.getId()) DriveApp.getFileById(fileId).setTrashed(true);
-  });
-  return temp;
-}
+function feeFor(date){return date<=EARLY_DEADLINE?400:500;}
+function makeReferenceId(){return 'NEW2AN2026-'+Utilities.getUuid().replace(/-/g,'').slice(0,9).toUpperCase();}
+function clean(value,max){return String(value==null?'':value).replace(/[\u0000-\u001F\u007F]/g,' ').trim().slice(0,max||500);}
+function serialise(value){return typeof value==='boolean'?value:(value==null?'':value);}
+function safeError(error){Logger.log(error&&error.stack||error);return String(error&&error.message||error||'Unexpected error.').slice(0,500);}
+function json(payload){return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);}
 
-function getOrCreateChildFolder(parent, name) {
-  const folders = parent.getFoldersByName(name);
-  return folders.hasNext() ? folders.next() : parent.createFolder(name);
-}
-
-function getSubmissionsFromSheet(mainFolder) {
-  const files = mainFolder.getFilesByName(MASTER_SHEET_NAME);
-  if (!files.hasNext()) return [];
-  const sheet  = SpreadsheetApp.openById(files.next().getId()).getActiveSheet();
-  const values = sheet.getDataRange().getValues();
-  if (values.length <= 1) return [];
-  const headers = values[0];
-  return values.slice(1).map(row => {
-    const obj = {};
-    headers.forEach((h, i) => { obj[h] = row[i]; });
-    return obj;
-  });
-}
-
-function getRegistrationByRef(refId) {
-  const mainFolder = DriveApp.getFolderById(MAIN_FOLDER_ID);
-  const folders = mainFolder.getFolders();
-  while (folders.hasNext()) {
-    const folder = folders.next();
-    if (folder.getName().startsWith(refId + '_')) {
-      const files = folder.getFilesByName('registration_data.json');
-      if (files.hasNext()) {
-        try {
-          return JSON.parse(files.next().getBlob().getDataAsString());
-        } catch (_) {
-          // Corrupted JSON in this folder — keep searching other folders
-        }
-      }
-    }
+/** Run once from the Apps Script editor. Creates the complete Drive structure when needed. */
+function setupNEW2AN(){
+  const props=PropertiesService.getScriptProperties();
+  let id=props.getProperty('MAIN_FOLDER_ID'),folder;
+  if(id)folder=DriveApp.getFolderById(id);
+  else{
+    folder=DriveApp.createFolder(MAIN_FOLDER_NAME);
+    props.setProperty('MAIN_FOLDER_ID',folder.getId());
   }
-  throw new Error('No registration found for Reference ID: ' + refId);
-}
-
-function findInvoiceIdByEmail(email, mainFolder) {
-  if (!email) return null;
-  const files = mainFolder.getFilesByName(MASTER_SHEET_NAME);
-  if (!files.hasNext()) return null;
-  const sheet = SpreadsheetApp.openById(files.next().getId()).getActiveSheet();
-  const values = sheet.getDataRange().getValues();
-  if (values.length <= 1) return null;
-  const headers = values[0];
-  const emailCol = headers.indexOf('Email');
-  const idCol    = headers.indexOf('Invoice_ID');
-  if (emailCol < 0 || idCol < 0) return null;
-  // Search from the bottom so we return the most recent match
-  for (let r = values.length - 1; r >= 1; r--) {
-    if (String(values[r][emailCol]).trim().toLowerCase() === String(email).trim().toLowerCase()
-        && values[r][idCol]) {
-      return values[r][idCol];
-    }
-  }
-  return null;
-}
-
-function generateInvoiceId() {
-  const now = new Date();
-  const pad = n => String(n).padStart(2, '0');
-  return 'SICET2026-' +
-    now.getFullYear() +
-    pad(now.getMonth() + 1) +
-    pad(now.getDate()) +
-    pad(now.getHours()) +
-    pad(now.getMinutes()) +
-    pad(now.getSeconds());
-}
-
-function jsonResponse(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
+  const resources=getResources();
+  return{success:true,mainFolderName:folder.getName(),mainFolderId:folder.getId(),mainFolderUrl:folder.getUrl(),spreadsheetName:resources.sheet.getParent().getName(),spreadsheetUrl:resources.sheet.getParent().getUrl(),sheetTab:resources.sheet.getName(),recordsFolder:resources.recordsFolder.getName(),paymentProofsFolder:resources.paymentProofsFolder.getName(),headers:HEADERS.length};
 }

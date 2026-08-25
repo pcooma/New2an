@@ -1,0 +1,17 @@
+.progress{grid-template-columns:repeat(6,1fr)}
+.past-event{background:#f7fafb;border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:8px;padding:18px 20px;margin-bottom:20px}
+.past-event strong,.past-event span{display:block}.past-event span{color:var(--blue);font-size:.86rem;margin-top:4px}.past-event p{color:var(--muted);font-size:.84rem;margin:8px 0}.past-event a{color:var(--blue);font-size:.84rem}
+.proforma-box{display:flex;align-items:center;justify-content:space-between;gap:18px;background:#edf6f7;border:1px solid #c9e0e4;padding:17px 20px;border-radius:9px;margin:20px 0}
+.proforma-box strong,.proforma-box span{display:block}
+.proforma-box span{color:var(--muted);font-size:.8rem;margin-top:3px}
+label small{color:var(--muted);font-weight:400;line-height:1.4}
+/* Keep required markers on the same line as their label text. The base label
+   uses a column flex layout, which otherwise treats the marker as a new row. */
+label:not(.check){display:block}
+label:not(.check)>input,label:not(.check)>select,label:not(.check)>textarea{display:block;margin-top:7px}
+.grid{align-items:end}
+.form-section>label:not(.check){margin-bottom:18px}
+@media(max-width:800px){.proforma-box{align-items:stretch;flex-direction:column}.proforma-box .btn{width:100%}}
+.future-events{background:#f7fafb;border:1px solid var(--line);border-radius:8px;padding:16px 20px;margin:0 0 20px}.future-events h4{margin:0 0 10px;color:var(--navy)}.event-choice{padding:10px 0;border-top:1px solid var(--line)}.event-choice small{display:block;margin-top:3px}
+.workshop-admin{background:white;border-radius:12px;padding:26px;margin:25px 0;box-shadow:var(--shadow)}.admin-workshop-row{display:flex;justify-content:space-between;align-items:center;gap:15px;padding:12px 0;border-bottom:1px solid var(--line)}.admin-workshop-row span{display:block;color:var(--muted);font-size:.8rem}.admin-actions{display:flex;justify-content:flex-end;gap:10px}
+@media(max-width:800px){.admin-workshop-row,.admin-actions{align-items:stretch;flex-direction:column}.workshop-admin{padding:20px 15px}.future-events{padding:14px}}
