@@ -20,6 +20,9 @@ const base = {
 const errors = value => Array.from(context.validateRegistration(context.normaliseRegistration({...base,...value})));
 
 assert.deepStrictEqual(errors({}),[]);
+assert.deepStrictEqual(errors({Billing_Legal_Name:'',Billing_Email:'',Billing_Address:''}),[]);
+assert(errors({Bill_To:'Institution / organisation',Billing_Legal_Name:'',Billing_Email:'',Billing_Address:''}).some(x=>x.includes('institutional invoice')));
+assert.deepStrictEqual(errors({Bill_To:'Institution / organisation'}),[]);
 assert.deepStrictEqual(errors({Attendance_Mode:'Online access',Emergency_Contact_Name:'',Emergency_Contact_Phone:''}),[]);
 assert.deepStrictEqual(errors({Attendance_Mode:'Online access',Emergency_Contact_Name:'',Emergency_Contact_Phone:'',Excursion_Interest:''}),[]);
 assert(errors({Emergency_Contact_Name:''}).some(x=>x.includes('Emergency contact')));

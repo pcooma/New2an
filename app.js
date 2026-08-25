@@ -282,6 +282,7 @@ function restore(data) {
   document.querySelectorAll('.future-workshop-choice').forEach(el => {el.checked=workshopIds.includes(el.value);});
   if (data && data.Payment_Proof_Base64 === '(uploaded — see folder)') paymentProofPreviouslyUploaded = true;
   updateAttendanceVisibility();
+  updateBillingVisibility();
   renderProofList();
 }
 
@@ -314,6 +315,19 @@ function updateAttendanceVisibility() {
     section.querySelectorAll('input,select,textarea').forEach(el => { el.disabled=!travelling; });
   });
   if (travelling) updateExcursionVisibility();
+}
+
+function updateBillingVisibility(){
+  const institutional=form.elements.Bill_To.value==='Institution / organisation';
+  ['Billing_Legal_Name','Billing_Email','Billing_Address','Purchase_Order','Additional_Info'].forEach(name=>{
+    const control=form.elements[name],label=control&&control.closest('label');
+    if(!control)return;
+    control.disabled=!institutional;
+    control.required=institutional&&['Billing_Legal_Name','Billing_Email','Billing_Address'].includes(name);
+    if(label)label.hidden=!institutional;
+  });
+  const box=document.querySelector('.proforma-box span');
+  if(box&&!currentReferenceId)box.textContent=institutional?'Provide the organisation details above for approval or reimbursement.':'A personal proforma will use your participant name, email and country.';
 }
 
 function renderProofList() {
@@ -413,6 +427,7 @@ async function saveWorkshopSettings(){
 
 document.getElementById('excursion-interest').addEventListener('change', updateExcursionVisibility);
 form.elements.Attendance_Mode.addEventListener('change', updateAttendanceVisibility);
+form.elements.Bill_To.addEventListener('change',updateBillingVisibility);
 document.getElementById('payment-proof').addEventListener('change', event => {
   const allowed = ['application/pdf','image/jpeg','image/png','image/webp'];
   const selected = Array.from(event.target.files || []);
@@ -427,7 +442,8 @@ document.getElementById('payment-proof').addEventListener('change', event => {
 document.getElementById('proforma-btn').addEventListener('click', generateProforma);
 
 function generateProforma() {
-  const required = ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','Bill_To','Billing_Legal_Name','Billing_Email','Billing_Address'];
+  const institutional=form.elements.Bill_To.value==='Institution / organisation';
+  const required = ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','Bill_To'].concat(institutional?['Billing_Legal_Name','Billing_Email','Billing_Address']:[]);
   const missing = required.map(name => form.elements[name]).find(el => !el || !String(el.value).trim());
   if (missing) { missing.focus(); setMessage('Complete the required participant, paper and billing fields before downloading the pre-payment invoice.', 'error'); return; }
   if (role.value === 'Author / presenting author' && Number(paperCount.value) < 1) { setMessage('Presenting authors must enter at least one accepted paper.', 'error'); return; }
@@ -441,30 +457,27 @@ function generateProforma() {
   if(data.Excursion_Interest==='Yes'&&!(Number(publicSettings.usdToEurRate)>0)){setMessage('The organiser has not configured the excursion USD-to-EUR rate yet, so an excursion invoice cannot be generated. Please retry later or contact the organiser.','error');return;}
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({unit:'mm',format:'a4'});
-  const left=18,right=192,width=right-left,navy=[9,35,60],ink=[23,39,51],muted=[90,105,112];
+  const left=14,right=196,width=right-left,navy=[9,35,60],ink=[23,39,51],muted=[90,105,112],rule=[205,218,222];
   const issueDate=new Date(),dueDate=new Date(issueDate);dueDate.setDate(dueDate.getDate()+Number(publicSettings.paymentDueDays||14));
   const dateText=date=>date.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
   const invoiceNumber=`PRO-${currentReferenceId}`;
-  let y=0;
-  const addPageHeader=()=>{doc.setFillColor(...navy);doc.rect(0,0,210,34,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(18);doc.text('NEW2AN 2026',left,14);doc.setFontSize(10);doc.text('PROFORMA INVOICE',left,23);doc.setFont('helvetica','normal');doc.setFontSize(8);const issuer=doc.splitTextToSize(String(publicSettings.issuerLegalName),85);doc.text(issuer,right,11,{align:'right'});doc.text('15-17 December 2026 | Colombo, Sri Lanka',right,27,{align:'right'});doc.setTextColor(...ink);y=44;};
-  const addContinuationPage=()=>{doc.addPage();doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(...navy);doc.text('NEW2AN 2026 | PROFORMA INVOICE - CONTINUED',left,12);doc.setFont('helvetica','normal');doc.text(invoiceNumber,right,12,{align:'right'});doc.setDrawColor(205,218,222);doc.line(left,17,right,17);doc.setTextColor(...ink);y=25;};
-  const ensureSpace=needed=>{if(y+needed>268)addContinuationPage();};
-  const wrapped=(text,x,maxWidth,lineHeight=4.5)=>{const lines=doc.splitTextToSize(String(text||'-'),maxWidth),height=Math.max(lineHeight,lines.length*lineHeight);ensureSpace(height);doc.text(lines,x,y);y+=height;return lines;};
-  const field=(label,value)=>{const lines=doc.splitTextToSize(String(value||'-'),width),height=4+Math.max(4.5,lines.length*4.5)+2;ensureSpace(height);doc.setFontSize(8);doc.setTextColor(...muted);doc.setFont('helvetica','bold');doc.text(label.toUpperCase(),left,y);y+=4;doc.setFontSize(9.5);doc.setTextColor(...ink);doc.setFont('helvetica','normal');doc.text(lines,left,y);y+=Math.max(4.5,lines.length*4.5)+2;};
-  const section=(title,needed=14)=>{ensureSpace(needed);y+=2;doc.setDrawColor(205,218,222);doc.line(left,y,right,y);y+=7;doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...navy);doc.text(title,left,y);y+=7;doc.setTextColor(...ink);};
-  addPageHeader();
-  doc.setFillColor(246,249,250);doc.roundedRect(left,y,width,22,2,2,'F');doc.setFontSize(8);doc.setTextColor(...muted);doc.setFont('helvetica','bold');doc.text('PROFORMA NUMBER',left+5,y+7);doc.text('ISSUE DATE',85,y+7);doc.text('PAYMENT DUE',135,y+7);doc.setFontSize(10);doc.setTextColor(...ink);doc.text(invoiceNumber,left+5,y+15);doc.text(dateText(issueDate),85,y+15);doc.text(dateText(dueDate),135,y+15);y+=28;
-  doc.setFillColor(255,248,230);doc.roundedRect(left,y,width,26,2,2,'F');doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(...ink);doc.text('DOCUMENT STATUS',left+5,y+7);doc.setFont('helvetica','normal');doc.setFontSize(8);const statusLines=doc.splitTextToSize('For institutional approval and payment processing only. This proforma is not proof of payment, a tax invoice, or a receipt. Obtain the organizer-issued paid invoice or official receipt after payment verification for reimbursement.',width-10);doc.text(statusLines,left+5,y+13);y+=32;
-  section('Issued by');field('Legal issuer',publicSettings.issuerLegalName);field('Registered address',publicSettings.issuerAddress);if(publicSettings.issuerRegistrationNumber)field('Registration number',publicSettings.issuerRegistrationNumber);field('Contact',[publicSettings.issuerEmail,publicSettings.issuerPhone].filter(Boolean).join(' | '));
-  section('Bill to');field('Legal name',data.Billing_Legal_Name);field('Billing address',data.Billing_Address);field('Finance email',data.Billing_Email);field('Participant',`${data.Title} ${data.Full_Name} | ${data.Email}`);field('Institution / organisation',data.Organization);if(data.Purchase_Order)field('Purchase order / tax reference',data.Purchase_Order);if(data.Additional_Info)field('Additional billing information',data.Additional_Info);
-  section('Conference registration',105);field('Event','26th International Conference on Next Generation Teletraffic and Wired/Wireless Advanced Networks (NEW2AN 2026)');field('Event dates and place','15-17 December 2026 | Colombo, Sri Lanka');field('Attendance',data.Attendance_Mode);for(let i=1;i<=Number(data.Paper_Count||0);i++)field(`Accepted paper ${i}`,`${data[`Paper_${i}_ID`]} - ${data[`Paper_${i}_Title`]}`);
-  ensureSpace(42);doc.setFillColor(...navy);doc.rect(left,y,width,8,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text('DESCRIPTION',left+4,y+5.5);doc.text('QTY',128,y+5.5,{align:'center'});doc.text('UNIT PRICE',160,y+5.5,{align:'right'});doc.text('AMOUNT',right-3,y+5.5,{align:'right'});y+=14;doc.setTextColor(...ink);doc.setFont('helvetica','normal');doc.text('Full NEW2AN registration - three conference days',left+4,y);doc.text('1',128,y,{align:'center'});doc.text(`EUR ${currentFee().toFixed(2)}`,160,y,{align:'right'});doc.text(`EUR ${currentFee().toFixed(2)}`,right-3,y,{align:'right'});y+=6;doc.setFontSize(8);doc.setTextColor(...muted);wrapped('Includes conference participation, online session access and digital Springer LNCS proceedings.',left+4,100,4);y+=3;doc.setDrawColor(205,218,222);doc.line(left,y,right,y);y+=8;doc.setTextColor(...ink);doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('REGISTRATION TOTAL PAYABLE NOW',left,y);doc.text(`EUR ${currentFee().toFixed(2)}`,right,y,{align:'right'});y+=10;
+  const fit=(text,maxWidth,maxLines=2)=>{let lines=doc.splitTextToSize(String(text||'-'),maxWidth);if(lines.length>maxLines){lines=lines.slice(0,maxLines);let last=lines[maxLines-1];while(doc.getTextWidth(last+'...')>maxWidth&&last.length)last=last.slice(0,-1);lines[maxLines-1]=last+'...';}return lines;};
+  const small=(label,value,x,y,maxWidth,maxLines=2)=>{doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text(label.toUpperCase(),x,y);doc.setFont('helvetica','normal');doc.setFontSize(7.8);doc.setTextColor(...ink);const lines=fit(value,maxWidth,maxLines);doc.text(lines,x,y+3.5);return y+3.5+lines.length*3.5;};
+  doc.setFillColor(...navy);doc.rect(0,0,210,27,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(16);doc.text('NEW2AN 2026',left,11);doc.setFontSize(9);doc.text('PROFORMA INVOICE',left,20);doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.text(fit(publicSettings.issuerLegalName,85,1),right,10,{align:'right'});doc.text('15-17 December 2026 | Colombo, Sri Lanka',right,20,{align:'right'});
+  let y=33;doc.setFillColor(246,249,250);doc.roundedRect(left,y,width,15,1.5,1.5,'F');doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text('PROFORMA NUMBER',left+4,y+5);doc.text('ISSUE DATE',83,y+5);doc.text('PAYMENT DUE',135,y+5);doc.setFontSize(8.5);doc.setTextColor(...ink);doc.text(invoiceNumber,left+4,y+11);doc.text(dateText(issueDate),83,y+11);doc.text(dateText(dueDate),135,y+11);y+=20;
+  doc.setFillColor(255,248,230);doc.roundedRect(left,y,width,13,1.5,1.5,'F');doc.setFont('helvetica','bold');doc.setFontSize(6.8);doc.setTextColor(...ink);doc.text('STATUS',left+4,y+5);doc.setFont('helvetica','normal');doc.setFontSize(6.7);doc.text(fit('For approval and payment processing. This proforma is not proof of payment, a tax invoice, or a receipt. Obtain the official paid receipt after verification for reimbursement.',width-25,2),left+18,y+5);y+=18;
+  const colWidth=84,col2=112;doc.setDrawColor(...rule);doc.line(left,y,right,y);y+=5;doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...navy);doc.text('Issued by',left,y);doc.text(institutional?'Bill to - institution':'Bill to - participant',col2,y);y+=5;
+  let leftY=small('Legal issuer',publicSettings.issuerLegalName,left,y,colWidth,2);leftY=small('Registered address',publicSettings.issuerAddress,left,leftY+2,colWidth,2);if(publicSettings.issuerRegistrationNumber)leftY=small('Registration number',publicSettings.issuerRegistrationNumber,left,leftY+2,colWidth,1);leftY=small('Contact',[publicSettings.issuerEmail,publicSettings.issuerPhone].filter(Boolean).join(' | '),left,leftY+2,colWidth,2);
+  const billName=institutional?data.Billing_Legal_Name:`${data.Title} ${data.Full_Name}`,billAddress=institutional?data.Billing_Address:data.Country_of_Residence,billEmail=institutional?data.Billing_Email:data.Email;
+  let rightY=small('Name',billName,col2,y,colWidth,2);rightY=small('Address / country',billAddress,col2,rightY+2,colWidth,2);rightY=small('Email',billEmail,col2,rightY+2,colWidth,1);if(institutional&&data.Purchase_Order)rightY=small('PO / tax reference',data.Purchase_Order,col2,rightY+2,colWidth,1);rightY=small('Participant',`${data.Title} ${data.Full_Name}`,col2,rightY+2,colWidth,1);y=Math.max(leftY,rightY)+4;
+  doc.line(left,y,right,y);y+=5;doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...navy);doc.text('Conference registration',left,y);doc.setFont('helvetica','normal');doc.setFontSize(7.2);doc.setTextColor(...ink);doc.text(`NEW2AN 2026 | 15-17 Dec 2026 | Colombo, Sri Lanka | ${data.Attendance_Mode}`,left,y+4);y+=9;for(let i=1;i<=Number(data.Paper_Count||0);i++){doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text(`PAPER ${i}`,left,y);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(...ink);doc.text(fit(`${data[`Paper_${i}_ID`]} - ${data[`Paper_${i}_Title`]}`,width-20,1),left+17,y);y+=4;}
+  y+=2;doc.setFillColor(...navy);doc.rect(left,y,width,7,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.text('DESCRIPTION',left+3,y+4.8);doc.text('QTY',134,y+4.8,{align:'center'});doc.text('UNIT PRICE',162,y+4.8,{align:'right'});doc.text('AMOUNT',right-3,y+4.8,{align:'right'});y+=12;doc.setTextColor(...ink);doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text('Full NEW2AN registration - three conference days',left+3,y);doc.text('1',134,y,{align:'center'});doc.text(`EUR ${currentFee().toFixed(2)}`,162,y,{align:'right'});doc.text(`EUR ${currentFee().toFixed(2)}`,right-3,y,{align:'right'});y+=5;doc.setFontSize(6.8);doc.setTextColor(...muted);doc.text('Conference participation, online session access and digital Springer LNCS proceedings.',left+3,y);y+=4;doc.setDrawColor(...rule);doc.line(left,y,right,y);y+=6;doc.setTextColor(...ink);doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('REGISTRATION TOTAL PAYABLE NOW',left,y);doc.text(`EUR ${currentFee().toFixed(2)}`,right,y,{align:'right'});y+=6;
   if(data.Excursion_Interest==='Yes'){
     const count=Number(data.Excursion_Participant_Count||1),fee=Number(publicSettings.excursionFeeUsd),usdTotal=fee*count,rate=Number(publicSettings.usdToEurRate),eurTotal=usdTotal*rate;
-    ensureSpace(46);doc.setFillColor(239,246,248);doc.roundedRect(left,y,width,39,2,2,'F');y+=7;doc.setFontSize(10);doc.setFont('helvetica','bold');doc.text('EXCURSION - PAYABLE ON THE EXCURSION DAY',left+4,y);y+=7;doc.setFontSize(9);doc.setFont('helvetica','normal');doc.text(`${count} participant${count===1?'':'s'} x USD ${fee.toFixed(2)} = USD ${usdTotal.toFixed(2)}`,left+4,y);y+=6;doc.text(`Organiser-set indicative rate: 1 USD = EUR ${rate.toFixed(4)}`,left+4,y);y+=6;doc.setFont('helvetica','bold');doc.text(`Indicative EUR equivalent: EUR ${eurTotal.toFixed(2)}`,left+4,y);y+=6;doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text('Separate from registration. Do not pay this amount now.',left+4,y);y+=10;
+    doc.setFillColor(239,246,248);doc.roundedRect(left,y,width,22,1.5,1.5,'F');doc.setFontSize(8);doc.setFont('helvetica','bold');doc.text('EXCURSION - PAY ON THE EXCURSION DAY',left+3,y+5);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.text(`${count} participant${count===1?'':'s'} x USD ${fee.toFixed(2)} = USD ${usdTotal.toFixed(2)} | 1 USD = EUR ${rate.toFixed(4)} | Indicative EUR ${eurTotal.toFixed(2)}`,left+3,y+11);doc.setFontSize(6.5);doc.text('Separate from registration. Do not pay this amount now.',left+3,y+17);y+=26;
   }
-  section('Tax and payment',65);field('Tax treatment',publicSettings.issuerTaxStatement);field('Payment instructions',publicSettings.paymentInstructions);field('Payment reference',currentReferenceId);field('Terms',publicSettings.termsUrl);
-  const pages=doc.getNumberOfPages();for(let page=1;page<=pages;page++){doc.setPage(page);doc.setDrawColor(220);doc.line(left,280,right,280);doc.setFontSize(7.5);doc.setTextColor(...muted);doc.text(`System generated | ${publicSettings.issuerEmail}`,left,286);doc.text(`Page ${page} of ${pages}`,right,286,{align:'right'});}
+  doc.setDrawColor(...rule);doc.line(left,y,right,y);y+=5;doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(...navy);doc.text('Tax and payment',left,y);y+=4;doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text('TAX TREATMENT',left,y);doc.text('PAYMENT INSTRUCTIONS',107,y);y+=3.5;doc.setFont('helvetica','normal');doc.setFontSize(6.8);doc.setTextColor(...ink);doc.text(fit(publicSettings.issuerTaxStatement,84,3),left,y);doc.text(fit(publicSettings.paymentInstructions,89,3),107,y);y+=12;doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text('PAYMENT REFERENCE',left,y);doc.text('TERMS',107,y);doc.setFont('helvetica','normal');doc.setFontSize(6.8);doc.setTextColor(...ink);doc.text(currentReferenceId,left,y+3.5);doc.text(fit(publicSettings.termsUrl,89,1),107,y+3.5);
+  doc.setDrawColor(220);doc.line(left,281,right,281);doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text(`System generated | ${publicSettings.issuerEmail}`,left,286);doc.text('Page 1 of 1',right,286,{align:'right'});
   doc.save(`NEW2AN2026_Proforma_${currentReferenceId}.pdf`);
   localStorage.setItem('new2an2026_last_reference',JSON.stringify({referenceId:currentReferenceId,email:data.Email}));
   setMessage(`Pre-payment invoice downloaded. Keep reference ID ${currentReferenceId}; you will need it for payment and to reopen this registration.`, 'success');
@@ -543,6 +556,6 @@ document.getElementById('export-btn').addEventListener('click', () => {
   XLSX.writeFile(book,`NEW2AN_2026_Operations_${new Date().toISOString().slice(0,10)}.xlsx`);
 });
 
-refreshFee(); renderPapers(); updateAttendanceVisibility(); renderProofList(); ensureWorkshopAdmin(); loadWorkshopSettings();
+refreshFee(); renderPapers(); updateAttendanceVisibility(); updateBillingVisibility(); renderProofList(); ensureWorkshopAdmin(); loadWorkshopSettings();
 const savedDraft = localStorage.getItem(CONFIG.draftKey); if (savedDraft) { try { restore(JSON.parse(savedDraft)); } catch (_) {} }
 openViewFromHash();

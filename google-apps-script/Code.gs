@@ -118,7 +118,8 @@ function normaliseRegistration(input) {
 
 function validateRegistration(d) {
   const errors=[];
-  ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','Bill_To','Billing_Legal_Name','Billing_Email','Billing_Address','Payment_Stage'].forEach(function(k){if(!d[k])errors.push(k.replace(/_/g,' ')+' is required.');});
+  ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','Bill_To','Payment_Stage'].forEach(function(k){if(!d[k])errors.push(k.replace(/_/g,' ')+' is required.');});
+  if(d.Bill_To==='Institution / organisation')['Billing_Legal_Name','Billing_Email','Billing_Address'].forEach(function(k){if(!d[k])errors.push(k.replace(/_/g,' ')+' is required for an institutional invoice.');});
   if(d.Attendance_Mode==='In person in Colombo'&&(!d.Emergency_Contact_Name||!d.Emergency_Contact_Phone))errors.push('Emergency contact name and phone are required for in-person participants.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.Email)) errors.push('A valid email is required.');
   if (!d.International_Eligibility_Confirmed || /^sri\s*lanka$/i.test(d.Country_of_Residence) || /^sri\s*lankan$/i.test(d.Nationality)) errors.push('This registration form is for participants who are not Sri Lankan citizens and do not live in Sri Lanka.');
