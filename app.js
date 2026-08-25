@@ -2,7 +2,7 @@
 
 const extendedStyles = document.createElement('link');
 extendedStyles.rel = 'stylesheet';
-extendedStyles.href = 'extended.css?v=1';
+extendedStyles.href = 'extended.css?v=2';
 document.head.appendChild(extendedStyles);
 
 const CONFIG = Object.freeze({
@@ -10,6 +10,7 @@ const CONFIG = Object.freeze({
   earlyDeadline: '2026-10-31T23:59:59+05:30',
   earlyFee: 400,
   lateFee: 500,
+  excursionFeeUsd: 50,
   currency: 'EUR',
   draftKey: 'new2an2026_registration_draft',
   tokenKey: 'new2an2026_admin_token'
@@ -95,7 +96,7 @@ function clarifyParticipantCopy() {
   const travelConsentText=form.elements.Travel_Data_Consent?.closest('label')?.querySelector('span');
   if(travelConsentText) travelConsentText.textContent='If I request travel or hotel assistance, I allow the organising team to share only the necessary details with its approved service partner.';
   const excursionText=form.elements.Excursion_Acknowledgement?.closest('label')?.querySelector('span');
-  if(excursionText) excursionText.textContent='I understand that expressing interest does not reserve a place. The team will send the final route, date, price, inclusions, insurance information and cancellation terms separately.';
+  if(excursionText) excursionText.textContent='I understand that the excursion costs USD 50 per participant, is charged separately, and that the route, date, inclusions, insurance information and cancellation terms will be issued separately.';
   setLabel('Excursion_Interest','Would you like to join the planned conference excursion?');
   setLabel('Excursion_Participant_Count','Total number of excursion participants, including you');
   setLabel('Excursion_Participant_Names','Names of additional excursion participants');
@@ -120,7 +121,7 @@ function clarifyParticipantCopy() {
   document.getElementById('proforma-btn').textContent = 'Download pre-payment invoice PDF';
   document.getElementById('submit-btn').textContent = 'Send registration details';
   document.querySelector('#visit-section .section-heading p').textContent = 'Tell us what assistance you may need. These answers are planning requests only and do not confirm flights, airport transfers, hotels or visa approval.';
-  document.querySelector('#excursion-section .section-heading p').textContent = 'The route, date and price have not been confirmed. Your answer helps the team estimate numbers and accessibility needs.';
+  document.querySelector('#excursion-section .section-heading p').textContent = 'The excursion costs USD 50 per participant and is charged separately from conference registration.';
   const workshop=document.querySelector('#workshop-section .section-heading p');
   if(workshop) workshop.textContent='Tell us whether you attended the workshop already held on 21 July 2026, and whether you want announcements about any new workshops.';
 }
@@ -183,6 +184,8 @@ function toObject(targetForm) {
   data.Currency = CONFIG.currency;
   data.Payment_Currency = CONFIG.currency;
   data.Payment_Status = 'AWAITING_INSTRUCTIONS';
+  data.Excursion_Fee_Per_Person_USD = CONFIG.excursionFeeUsd;
+  data.Excursion_Total_USD = data.Excursion_Interest === 'Yes' ? CONFIG.excursionFeeUsd * Number(data.Excursion_Participant_Count || 0) : 0;
   data.Form_Schema_Version = 1;
   data.Workshop_Selections = Array.from(document.querySelectorAll('.future-workshop-choice:checked')).map(el => el.value).join(' | ');
   if (currentReferenceId) data.Reference_ID = currentReferenceId;
@@ -394,7 +397,8 @@ function generateProforma() {
   line('Reference',currentReferenceId); line('Issue date',new Date().toLocaleDateString('en-GB')); line('Participant',`${data.Title} ${data.Full_Name}`); line('Email',data.Email); line('Organisation',data.Organization); line('Bill to',data.Bill_To); line('Billing address',data.Billing_Address);
   y+=5; doc.setDrawColor(205,218,222);doc.line(left,y,right,y);y+=10;
   doc.setFont('helvetica','bold');doc.text('Description',left,y);doc.text('Amount',right,y,{align:'right'});y+=7;doc.setFont('helvetica','normal');doc.text('Full NEW2AN registration - three conference days',left,y);doc.text(`EUR ${currentFee().toFixed(2)}`,right,y,{align:'right'});y+=6;doc.setFontSize(8);doc.text('Includes online session access and digital Springer LNCS proceedings.',left,y);y+=10;doc.line(left,y,right,y);y+=9;doc.setFontSize(12);doc.setFont('helvetica','bold');doc.text('TOTAL',left,y);doc.text(`EUR ${currentFee().toFixed(2)}`,right,y,{align:'right'});
-  y+=18;doc.setFontSize(9);doc.setFont('helvetica','normal');const notes=['This is a proforma invoice, not a payment receipt or tax invoice.','Registration is complete only after successful payment confirmation by NEW2AN.','Excursion, travel, accommodation, visa, insurance and personal costs are not included.','Use the reference above consistently during registration and payment.','Official payment contact: new2an@crisglobal.org'];notes.forEach(note=>{doc.text(note,left,y);y+=6;});
+  if(data.Excursion_Interest==='Yes'){line('Excursion (charged separately)',`USD ${(CONFIG.excursionFeeUsd*Number(data.Excursion_Participant_Count||1)).toFixed(2)} (${Number(data.Excursion_Participant_Count||1)} participant${Number(data.Excursion_Participant_Count||1)===1?'':'s'})`);}
+  y+=18;doc.setFontSize(9);doc.setFont('helvetica','normal');const notes=['This is a proforma invoice, not a payment receipt or tax invoice.','Registration is complete only after successful payment confirmation by NEW2AN.','The excursion costs USD 50 per participant and is charged separately from the EUR conference fee.','Travel, accommodation, visa, insurance and personal costs are not included.','Use the reference above consistently during registration and payment.','Official payment contact: new2an@crisglobal.org'];notes.forEach(note=>{doc.text(note,left,y);y+=6;});
   doc.setTextColor(100);doc.setFontSize(8);doc.text('System generated. No signature required.',left,286);doc.save(`NEW2AN2026_Proforma_${currentReferenceId}.pdf`);
   localStorage.setItem('new2an2026_last_reference',JSON.stringify({referenceId:currentReferenceId,email:data.Email}));
   setMessage(`Pre-payment invoice downloaded. Keep reference ID ${currentReferenceId}; you will need it for payment and to reopen this registration.`, 'success');
@@ -417,6 +421,13 @@ document.querySelectorAll('.nav-link').forEach(button => button.addEventListener
   document.getElementById(`${button.dataset.view}-view`).classList.add('active');
   if (button.dataset.view === 'dashboard' && adminToken) loadSubmissions();
 }));
+
+function openViewFromHash() {
+  if (location.hash !== '#admin') return;
+  const adminLink = document.querySelector('[data-view="dashboard"]');
+  if (adminLink) adminLink.click();
+}
+window.addEventListener('hashchange', openViewFromHash);
 
 document.getElementById('login-btn').addEventListener('click', async () => {
   const loginMessage = document.getElementById('login-message');
@@ -441,7 +452,7 @@ function renderDashboard() {
   const support = submissions.filter(r => String(r.Support_Request || '').trim()).length;
   const excursion = submissions.filter(r => r.Excursion_Interest === 'Yes').reduce((sum,r)=>sum+(Number(r.Excursion_Participant_Count)||0),0);
   document.getElementById('metrics').innerHTML = [['Registrations',submissions.length],['In person',inPerson],['Travel help',travel],['Hotel help',hotels],['Support requests',support],['Payment proofs',submissions.filter(r=>r.Payment_Status==='PROOF_SUBMITTED').length],['Excursion pax',excursion]].map(([label,value]) => `<div class="metric"><strong>${value}</strong><span>${label}</span></div>`).join('');
-  const columns = ['Submission_Date','Reference_ID','Full_Name','Email','Country_of_Residence','Participant_Role','Paper_Count','Workshop_Attendance','Future_Workshop_Updates','Attendance_Mode','Registration_Fee','Payment_Status','Transaction_Reference','Excursion_Interest','Excursion_Participant_Count','Travel_Agency_Assistance','Accommodation_Assistance'];
+  const columns = ['Submission_Date','Reference_ID','Full_Name','Email','Country_of_Residence','Participant_Role','Paper_Count','Workshop_Attendance','Future_Workshop_Updates','Attendance_Mode','Registration_Fee','Payment_Status','Transaction_Reference','Excursion_Interest','Excursion_Participant_Count','Excursion_Total_USD','Travel_Agency_Assistance','Accommodation_Assistance'];
   document.getElementById('table-head').innerHTML = `<tr>${columns.map(c=>`<th>${c.replaceAll('_',' ')}</th>`).join('')}</tr>`;
   document.getElementById('table-body').innerHTML = submissions.map(row => `<tr>${columns.map(c=>`<td>${escapeHtml(row[c] ?? '')}</td>`).join('')}</tr>`).join('');
 }
@@ -459,7 +470,7 @@ document.getElementById('export-btn').addEventListener('click', () => {
   add('Meals',submissions.filter(r=>r.Attendance_Mode==='In person in Colombo').map(r=>pick(r,['Reference_ID','Full_Name','Organization','Dietary_Preference','Excursion_Interest','Excursion_Dietary_Needs','Visit_Notes'])));
   add('Travel Logistics',submissions.filter(r=>r.Attendance_Mode==='In person in Colombo').map(r=>pick(r,['Reference_ID','Full_Name','Phone','Arrival_Date','Arrival_Details','Departure_Date','Departure_Details','Travel_Agency_Assistance','Venue_Transport','Visa_Support','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone'])));
   add('Accommodation',submissions.filter(r=>r.Accommodation_Assistance&&r.Accommodation_Assistance!=='No').map(r=>pick(r,['Reference_ID','Full_Name','Email','Phone','Accommodation_Assistance','Room_Preference','Arrival_Date','Departure_Date','Visit_Notes'])));
-  add('Excursion',submissions.filter(r=>r.Excursion_Interest&&r.Excursion_Interest!=='No').map(r=>pick(r,['Reference_ID','Full_Name','Phone','Excursion_Interest','Excursion_Participant_Count','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language'])));
+  add('Excursion',submissions.filter(r=>r.Excursion_Interest&&r.Excursion_Interest!=='No').map(r=>pick(r,['Reference_ID','Full_Name','Phone','Excursion_Interest','Excursion_Participant_Count','Excursion_Fee_Per_Person_USD','Excursion_Total_USD','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language'])));
   add('Workshops',submissions.map(r=>pick(r,['Reference_ID','Full_Name','Email','Workshop_Attendance','Workshop_Selections','Future_Workshop_Updates','Workshop_Notes'])));
   add('Payments',submissions.map(r=>pick(r,['Reference_ID','Full_Name','Email','Registration_Fee','Currency','Payment_Stage','Payment_Status','Transaction_Reference','Amount_Paid','Payment_Currency','Payment_Proof_Files'])));
   add('Support Requests',submissions.filter(r=>r.Support_Request||r.Support_Category).map(r=>pick(r,['Reference_ID','Full_Name','Email','Phone','Country_of_Residence','Support_Category','Support_Reply_Method','Support_Request','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance'])));
@@ -468,3 +479,4 @@ document.getElementById('export-btn').addEventListener('click', () => {
 
 refreshFee(); renderPapers(); updateAttendanceVisibility(); renderProofList(); ensureWorkshopAdmin(); loadWorkshopSettings();
 const savedDraft = localStorage.getItem(CONFIG.draftKey); if (savedDraft) { try { restore(JSON.parse(savedDraft)); } catch (_) {} }
+openViewFromHash();

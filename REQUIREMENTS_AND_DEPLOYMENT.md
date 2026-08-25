@@ -17,7 +17,7 @@ Sources were rechecked on 25 August 2026: `https://new2an.com/`, `/cfp.html`, `/
 
 ## Deliberately unresolved
 
-The official site does not yet publish the exact Colombo venue, final technical programme, hotel inventory/rates, travel-agency partner, airport-transfer service, excursion itinerary/price, or an urgent local telephone/WhatsApp contact. Terms state that checkout may use PayHere or another identified provider, but no live checkout link or final method is published. The platform therefore collects assistance requests but does not promise bookings, display old bank details, or invent contacts. The official email for paper submission, review, payments and publication is `new2an@crisglobal.org`. The free 21 July 2026 workshop has concluded and is hidden from the registration journey. If an administrator later publishes a workshop with `open` status, the workshop step becomes visible automatically.
+The official site does not yet publish the exact Colombo venue, final technical programme, hotel inventory/rates, travel-agency partner, airport-transfer service, excursion itinerary, or an urgent local telephone/WhatsApp contact. The organiser has confirmed an excursion fee of USD 50 per participant, charged separately from conference registration. Terms state that checkout may use PayHere or another identified provider, but no live checkout link or final method is published. The platform therefore collects assistance requests but does not promise bookings, display old bank details, or invent contacts. The official email for paper submission, review, payments and publication is `new2an@crisglobal.org`. The free 21 July 2026 workshop has concluded and is hidden from the registration journey. If an administrator later publishes a workshop with `open` status, the workshop step becomes visible automatically.
 
 ## International participant safeguards implemented
 
@@ -34,13 +34,13 @@ The Admin Excel export contains separate sheets for all registrations, meals, tr
 ## Google deployment
 
 1. Create a new Apps Script project and paste `google-apps-script/Code.gs` into it.
-2. Add Script Properties `ADMIN_EMAIL` and `ADMIN_PASSWORD`. `MAIN_FOLDER_ID` is optional when starting a new deployment.
+2. Add Script Properties `ADMIN_EMAIL` = `p.cooma@gmail.com` and `ADMIN_PASSWORD` = the private password supplied by the administrator. Do not put the password in GitHub. `MAIN_FOLDER_ID` is optional when starting a new deployment.
 3. Run `setupNEW2AN()` once and authorize Drive and Sheets access. If `MAIN_FOLDER_ID` is absent, setup creates `NEW2AN 2026 - Registration Administration` and stores its ID automatically.
 4. Confirm that setup reports the master workbook `NEW2AN 2026 - Master Registration Database`, its `Registrations` sheet, `01 - Participant Registration Records`, and `02 - Payment Proofs`.
 5. Deploy a new Web app. Execute as the owner and allow access to anyone.
 6. Put the resulting `/exec` URL in `CONFIG.apiUrl` in `app.js`.
 7. Redeploy after every backend change. An endpoint health response alone does not prove that the latest code is deployed.
-8. Submit a test registration, reload it by reference plus email, sign into Admin, and export the Excel workbook before publishing the link.
+8. Submit a test registration, reload it by reference plus email, sign into the direct Admin URL at `https://pcooma.github.io/New2an/#admin`, and export the Excel workbook before publishing the link.
 
 The backend never uses the former SICET folder ID. The master workbook uses a dedicated NEW2AN schema and evolves append-only.
 

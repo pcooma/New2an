@@ -19,6 +19,7 @@ const PAYMENT_PROOFS_FOLDER = '02 - Payment Proofs';
 const EARLY_DEADLINE = new Date('2026-10-31T23:59:59+05:30');
 const SCHEMA_VERSION = 1;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const EXCURSION_FEE_USD = 50;
 const ALLOWED_UPLOAD_MIME = ['application/pdf','image/jpeg','image/png','image/webp'];
 const HEADERS = [
   'Submission_Date','Last_Updated','Reference_ID','Status','Payment_Status',
@@ -35,7 +36,7 @@ const HEADERS = [
   'Bill_To','Billing_Email','Billing_Address','Purchase_Order','Additional_Info',
   'Payment_Stage','Transaction_Reference','Amount_Paid','Payment_Currency','Payment_Proof_Files',
   'Policy_Agreement','Form_Schema_Version',
-  'Record_File_URL'
+  'Record_File_URL','Excursion_Fee_Per_Person_USD','Excursion_Total_USD'
 ];
 
 function doGet(e) {
@@ -99,6 +100,8 @@ function normaliseRegistration(input) {
   output.Reference_ID = clean(input.Reference_ID,40).toUpperCase();
   output.Paper_Count = Math.max(0,Math.min(2,parseInt(input.Paper_Count,10)||0));
   output.Excursion_Participant_Count = Math.max(0,Math.min(10,parseInt(input.Excursion_Participant_Count,10)||0));
+  output.Excursion_Fee_Per_Person_USD = EXCURSION_FEE_USD;
+  output.Excursion_Total_USD = output.Excursion_Interest === 'Yes' ? EXCURSION_FEE_USD * output.Excursion_Participant_Count : 0;
   output.Amount_Paid = Number(input.Amount_Paid || 0);
   output.Payment_Proof_Base64 = input.Payment_Proof_Base64;
   output.Payment_Currency = 'EUR';

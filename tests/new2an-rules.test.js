@@ -33,4 +33,7 @@ assert.deepStrictEqual(errors({Payment_Stage:'PAID_GATEWAY',Transaction_Referenc
 assert(errors({Payment_Stage:'PAID_GATEWAY',Transaction_Reference:'TX-1',Amount_Paid:400,Payment_Proof_Base64:[{name:'bad.exe',mimeType:'application/octet-stream',data:'AAAA'}]}).some(x=>x.includes('PDF')));
 assert.strictEqual(context.feeFor(new Date('2026-10-31T18:00:00Z')),400);
 assert.strictEqual(context.feeFor(new Date('2026-11-01T18:00:00Z')),500);
+const excursion = context.normaliseRegistration({...base,Excursion_Interest:'Yes',Excursion_Participant_Count:2,Excursion_Acknowledgement:true,Excursion_Participant_Names:'Guest'});
+assert.strictEqual(excursion.Excursion_Fee_Per_Person_USD,50);
+assert.strictEqual(excursion.Excursion_Total_USD,100);
 console.log('NEW2AN business-rule checks passed.');
