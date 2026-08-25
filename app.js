@@ -447,7 +447,7 @@ document.getElementById('payment-proof').addEventListener('change', event => {
 
 document.getElementById('proforma-btn').addEventListener('click', generateProforma);
 
-function generateProforma() {
+async function generateProforma() {
   const institutional=form.elements.Bill_To.value==='Institution / organisation';
   const required = ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Participant_Role','Attendance_Mode','Bill_To'].concat(institutional?['Billing_Legal_Name','Billing_Email','Billing_Address']:[]);
   const missing = required.map(name => form.elements[name]).find(el => !el || !String(el.value).trim());
@@ -484,9 +484,17 @@ function generateProforma() {
   }
   doc.setDrawColor(...rule);doc.line(left,y,right,y);y+=5;doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(...navy);doc.text('Tax and payment',left,y);y+=4;doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text('TAX TREATMENT',left,y);doc.text('PAYMENT INSTRUCTIONS',107,y);y+=3.5;doc.setFont('helvetica','normal');doc.setFontSize(6.8);doc.setTextColor(...ink);doc.text(fit(publicSettings.issuerTaxStatement,84,3),left,y);doc.text(fit(publicSettings.paymentInstructions,89,3),107,y);y+=12;doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text('PAYMENT REFERENCE',left,y);doc.text('TERMS',107,y);doc.setFont('helvetica','normal');doc.setFontSize(6.8);doc.setTextColor(...ink);doc.text(currentReferenceId,left,y+3.5);doc.text(fit(publicSettings.termsUrl,89,1),107,y+3.5);
   doc.setDrawColor(220);doc.line(left,281,right,281);doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text(`System generated | ${publicSettings.issuerEmail}`,left,286);doc.text('Page 1 of 1',right,286,{align:'right'});
-  doc.save(`NEW2AN2026_Proforma_${currentReferenceId}.pdf`);
-  localStorage.setItem('new2an2026_last_reference',JSON.stringify({referenceId:currentReferenceId,email:data.Email}));
-  setMessage(`Pre-payment invoice downloaded. Keep reference ID ${currentReferenceId}; you will need it for payment and to reopen this registration.`, 'success');
+  const button=document.getElementById('proforma-btn');
+  button.disabled=true;button.textContent='Archiving invoice...';
+  try{
+    const pdfData=doc.output('datauristring').split(',')[1];
+    await api({action:'saveInvoiceVersion',referenceId:currentReferenceId,email:data.Email,file:{mimeType:'application/pdf',data:pdfData}});
+    doc.save(`NEW2AN2026_Proforma_${currentReferenceId}.pdf`);
+    localStorage.setItem('new2an2026_last_reference',JSON.stringify({referenceId:currentReferenceId,email:data.Email}));
+    setMessage(`Pre-payment invoice archived in the registration folder and downloaded. Keep reference ID ${currentReferenceId}; you will need it for payment and to reopen this registration.`, 'success');
+  }catch(error){
+    setMessage(error.name==='AbortError'?'The invoice archive took too long to respond. Please retry; no unarchived download was created.':`The invoice could not be archived, so it was not downloaded. ${error.message}`,'error');
+  }finally{button.disabled=false;button.textContent='Download pre-payment invoice PDF';}
 }
 
 paperCount.addEventListener('change', renderPapers);

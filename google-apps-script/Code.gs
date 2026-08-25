@@ -15,7 +15,8 @@ const MAIN_FOLDER_NAME = 'NEW2AN 2026 - Registration Administration';
 const SHEET_NAME = 'NEW2AN 2026 - Master Registration Database';
 const SHEET_TAB_NAME = 'Registrations';
 const RECORDS_FOLDER = '01 - Participant Registration Records';
-const PAYMENT_PROOFS_FOLDER = '02 - Payment Proofs';
+const INVOICES_FOLDER = 'Invoices';
+const PAYMENT_PROOFS_FOLDER = 'Payment Proofs';
 const EARLY_DEADLINE = new Date('2026-10-31T23:59:59+05:30');
 const SCHEMA_VERSION = 1;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -58,6 +59,7 @@ function doPost(e) {
     if (body.action === 'adminLogin') return adminLogin(body);
     if (body.action === 'saveWorkshops') return saveWorkshops(body);
     if (body.action === 'savePublicSettings') return savePublicSettings(body);
+    if (body.action === 'saveInvoiceVersion') return saveInvoiceVersion(body);
     if (body.action === 'submitRegistration') return saveRegistration(body.data || {});
     return json({success:false,error:'Unsupported action.'});
   } catch (error) { return json({success:false,error:safeError(error)}); }
@@ -78,8 +80,9 @@ function saveRegistration(input) {
   data.Reference_ID = referenceId;
   data.Submission_Date = existing.submissionDate || now.toISOString();
   data.Last_Updated = now.toISOString();
-  const proofUrls = savePaymentProofs(resources.paymentProofsFolder, referenceId, data.Payment_Proof_Base64);
-  if (proofUrls.length) data.Payment_Proof_Files = proofUrls.join('\n');
+  const registrationFolder = getRegistrationFolder(resources.recordsFolder, referenceId);
+  const proofUrls = savePaymentProofs(registrationFolder, data.Payment_Proof_Base64);
+  if (proofUrls.length) data.Payment_Proof_Files = [existing.paymentProofFiles].concat(proofUrls).filter(Boolean).join('\n');
   else if (data.Payment_Proof_Base64 === '(uploaded — see folder)') data.Payment_Proof_Files = existing.paymentProofFiles || '(retained)';
   delete data.Payment_Proof_Base64;
   data.Status = existing.status || 'PENDING_PAYMENT_CONFIRMATION';
@@ -92,7 +95,7 @@ function saveRegistration(input) {
   data.Excursion_USD_to_EUR_Rate = data.Excursion_Interest === 'Yes' ? publicSettings.usdToEurRate : '';
   data.Excursion_Total_EUR_Indicative = data.Excursion_Interest === 'Yes' ? roundMoney(data.Excursion_Total_USD * publicSettings.usdToEurRate) : 0;
   data.Form_Schema_Version = SCHEMA_VERSION;
-  data.Record_File_URL = saveRecordFile(resources.recordsFolder, data);
+  data.Record_File_URL = saveRecordFile(registrationFolder, data);
   writeSheetRecord(sheet,data,existing.rowNumber);
   return json({success:true,referenceId:referenceId,status:data.Status,paymentStatus:data.Payment_Status});
 }
@@ -246,8 +249,7 @@ function getResources() {
   else{spreadsheet=SpreadsheetApp.create(SHEET_NAME);DriveApp.getFileById(spreadsheet.getId()).moveTo(folder);}
   const sheet=spreadsheet.getSheets()[0]; if(sheet.getName()!==SHEET_TAB_NAME)sheet.setName(SHEET_TAB_NAME); ensureSchema(sheet);
   const folders=folder.getFoldersByName(RECORDS_FOLDER); const recordsFolder=folders.hasNext()?folders.next():folder.createFolder(RECORDS_FOLDER);
-  const proofFolders=folder.getFoldersByName(PAYMENT_PROOFS_FOLDER); const paymentProofsFolder=proofFolders.hasNext()?proofFolders.next():folder.createFolder(PAYMENT_PROOFS_FOLDER);
-  return {folder:folder,sheet:sheet,recordsFolder:recordsFolder,paymentProofsFolder:paymentProofsFolder};
+  return {folder:folder,sheet:sheet,recordsFolder:recordsFolder};
 }
 
 function ensureSchema(sheet) {
@@ -292,19 +294,47 @@ function validateUpload(file){
   return '';
 }
 
-function savePaymentProofs(recordsFolder,referenceId,uploads){
+function getRegistrationFolder(recordsFolder,referenceId){
+  const named=recordsFolder.getFoldersByName(referenceId);
+  const folder=named.hasNext()?named.next():recordsFolder.createFolder(referenceId);
+  getOrCreateSubfolder(folder,INVOICES_FOLDER);
+  getOrCreateSubfolder(folder,PAYMENT_PROOFS_FOLDER);
+  return folder;
+}
+
+function getOrCreateSubfolder(parent,name){
+  const folders=parent.getFoldersByName(name);
+  return folders.hasNext()?folders.next():parent.createFolder(name);
+}
+
+function saveInvoiceVersion(body){
+  const referenceId=clean(body.referenceId,40).toUpperCase();
+  if(!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(referenceId))return json({success:false,error:'Invalid reference ID.'});
+  const file=body.file||{};
+  if(file.mimeType!=='application/pdf'||!file.data)return json({success:false,error:'A valid PDF invoice is required.'});
+  if(Math.ceil(String(file.data).length*3/4)>MAX_UPLOAD_BYTES)return json({success:false,error:'The invoice PDF is too large to archive.'});
+  const decoded=Utilities.base64Decode(file.data);
+  if(decoded.length<4||decoded[0]!==37||decoded[1]!==80||decoded[2]!==68||decoded[3]!==70)return json({success:false,error:'The archived invoice is not a valid PDF file.'});
+  const resources=getResources();
+  const registrationFolder=getRegistrationFolder(resources.recordsFolder,referenceId);
+  const invoiceFolder=getOrCreateSubfolder(registrationFolder,INVOICES_FOLDER);
+  const stamp=Utilities.formatDate(new Date(),Session.getScriptTimeZone()||'Asia/Colombo','yyyyMMdd_HHmmss_SSS');
+  const name='NEW2AN2026_Proforma_'+referenceId+'_'+stamp+'_'+Utilities.getUuid().slice(0,8)+'.pdf';
+  const saved=invoiceFolder.createFile(Utilities.newBlob(decoded,'application/pdf',name));
+  return json({success:true,referenceId:referenceId,fileName:saved.getName(),fileUrl:saved.getUrl(),registrationFolderUrl:registrationFolder.getUrl()});
+}
+
+function savePaymentProofs(registrationFolder,uploads){
   if(!Array.isArray(uploads)||!uploads.length)return [];
-  const named=recordsFolder.getFoldersByName(referenceId), folder=named.hasNext()?named.next():recordsFolder.createFolder(referenceId);
-  const oldFiles=[], existing=folder.getFiles();while(existing.hasNext())oldFiles.push(existing.next());
+  const folder=getOrCreateSubfolder(registrationFolder,PAYMENT_PROOFS_FOLDER);
   const created=[];
   try {
     uploads.forEach(function(file,index){
       const safeName=clean(file.name,120).replace(/[^A-Za-z0-9._-]/g,'_')||('proof_'+(index+1));
-      const blob=Utilities.newBlob(Utilities.base64Decode(file.data),file.mimeType,'new_payment_proof_'+Date.now()+'_'+(index+1)+'_'+safeName);
+      const stamp=Utilities.formatDate(new Date(),Session.getScriptTimeZone()||'Asia/Colombo','yyyyMMdd_HHmmss_SSS');
+      const blob=Utilities.newBlob(Utilities.base64Decode(file.data),file.mimeType,'payment_proof_'+stamp+'_'+(index+1)+'_'+Utilities.getUuid().slice(0,8)+'_'+safeName);
       created.push(folder.createFile(blob));
     });
-    oldFiles.forEach(function(file){file.setTrashed(true);});
-    created.forEach(function(file){file.setName(file.getName().replace(/^new_/,''));});
     return created.map(function(file){return file.getUrl();});
   } catch(error) {
     created.forEach(function(file){try{file.setTrashed(true);}catch(_){}});
@@ -312,10 +342,10 @@ function savePaymentProofs(recordsFolder,referenceId,uploads){
   }
 }
 
-function saveRecordFile(folder,data) {
-  const name=data.Reference_ID+'.json', files=folder.getFilesByName(name), body=JSON.stringify(data,null,2);
+function saveRecordFile(registrationFolder,data) {
+  const name='registration.json', files=registrationFolder.getFilesByName(name), body=JSON.stringify(data,null,2);
   if(files.hasNext()){const file=files.next();file.setContent(body);return file.getUrl();}
-  return folder.createFile(name,body,MimeType.PLAIN_TEXT).getUrl();
+  return registrationFolder.createFile(name,body,MimeType.PLAIN_TEXT).getUrl();
 }
 
 function feeFor(date){return date<=EARLY_DEADLINE?400:500;}
@@ -337,5 +367,5 @@ function setupNEW2AN(){
     props.setProperty('MAIN_FOLDER_ID',folder.getId());
   }
   const resources=getResources();
-  return{success:true,mainFolderName:folder.getName(),mainFolderId:folder.getId(),mainFolderUrl:folder.getUrl(),spreadsheetName:resources.sheet.getParent().getName(),spreadsheetUrl:resources.sheet.getParent().getUrl(),sheetTab:resources.sheet.getName(),recordsFolder:resources.recordsFolder.getName(),paymentProofsFolder:resources.paymentProofsFolder.getName(),headers:HEADERS.length};
+  return{success:true,mainFolderName:folder.getName(),mainFolderId:folder.getId(),mainFolderUrl:folder.getUrl(),spreadsheetName:resources.sheet.getParent().getName(),spreadsheetUrl:resources.sheet.getParent().getUrl(),sheetTab:resources.sheet.getName(),registrationFoldersRoot:resources.recordsFolder.getName(),invoiceSubfolder:INVOICES_FOLDER,paymentProofSubfolder:PAYMENT_PROOFS_FOLDER,headers:HEADERS.length};
 }
