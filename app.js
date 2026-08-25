@@ -6,7 +6,7 @@ extendedStyles.href = 'extended.css?v=1';
 document.head.appendChild(extendedStyles);
 
 const CONFIG = Object.freeze({
-  apiUrl: '', // Set to the NEW2AN Apps Script web-app URL after deployment.
+  apiUrl: 'https://script.google.com/macros/s/AKfycbxW-RbC28FXkOlnrwYU2s4UE-YI7UsauUqTUUKoGunyZgdHGAwgyYug6NIkhEPnqS0J/exec',
   earlyDeadline: '2026-10-31T23:59:59+05:30',
   earlyFee: 400,
   lateFee: 500,
