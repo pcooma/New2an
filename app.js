@@ -198,6 +198,12 @@ function toObject(targetForm) {
   data.Excursion_Total_USD = data.Excursion_Interest === 'Yes' ? publicSettings.excursionFeeUsd * Number(data.Excursion_Participant_Count || 0) : 0;
   data.Excursion_USD_to_EUR_Rate = data.Excursion_Interest === 'Yes' ? publicSettings.usdToEurRate : '';
   data.Excursion_Total_EUR_Indicative = data.Excursion_Interest === 'Yes' ? Number((data.Excursion_Total_USD * publicSettings.usdToEurRate).toFixed(2)) : 0;
+  if(data.Bill_To==='Participant'){
+    data.Billing_Legal_Name=`${data.Title||''} ${data.Full_Name||''}`.trim();
+    data.Billing_Email=data.Email||'';
+    data.Billing_Address=data.Country_of_Residence||'';
+    data.Purchase_Order='';data.Additional_Info='';
+  }
   data.Form_Schema_Version = 1;
   data.Workshop_Selections = Array.from(document.querySelectorAll('.future-workshop-choice:checked')).map(el => el.value).join(' | ');
   if (currentReferenceId) data.Reference_ID = currentReferenceId;
