@@ -60,13 +60,13 @@ function doPost(e) {
     if (body.action === 'saveWorkshops') return saveWorkshops(body);
     if (body.action === 'savePublicSettings') return savePublicSettings(body);
     if (body.action === 'saveInvoiceVersion') return saveInvoiceVersion(body);
-    if (body.action === 'submitRegistration') return saveRegistration(body.data || {});
+    if (body.action === 'submitRegistration') return saveRegistration(body.data || {},body.editToken);
     return json({success:false,error:'Unsupported action.'});
   } catch (error) { return json({success:false,error:safeError(error)}); }
   finally { lock.releaseLock(); }
 }
 
-function saveRegistration(input) {
+function saveRegistration(input,editToken) {
   const data = normaliseRegistration(input);
   const errors = validateRegistration(data);
   if (errors.length) return json({success:false,error:errors.join(' ')});
@@ -75,7 +75,8 @@ function saveRegistration(input) {
   const resources = getResources();
   const sheet = resources.sheet;
   const now = new Date();
-  const existing = findRow(sheet, data.Reference_ID, data.Email);
+  const existing = data.Reference_ID ? findRow(sheet,data.Reference_ID,'') : {};
+  if(data.Reference_ID&&(!existing.rowNumber||existing.email.toLowerCase()!==data.Email||!verifyEditToken(editToken,data.Reference_ID,data.Email)))return json({success:false,error:'This registration cannot be updated without a valid reference-and-email session. Reload it using the returning-registration form.'});
   const referenceId = existing.referenceId || makeReferenceId();
   data.Reference_ID = referenceId;
   data.Submission_Date = existing.submissionDate || now.toISOString();
@@ -85,9 +86,9 @@ function saveRegistration(input) {
   if (proofUrls.length) data.Payment_Proof_Files = [existing.paymentProofFiles].concat(proofUrls).filter(Boolean).join('\n');
   else if (data.Payment_Proof_Base64 === '(uploaded — see folder)') data.Payment_Proof_Files = existing.paymentProofFiles || '(retained)';
   delete data.Payment_Proof_Base64;
-  data.Status = existing.status || 'PENDING_PAYMENT_CONFIRMATION';
-  data.Payment_Status = existing.paymentStatus === 'CONFIRMED' ? 'CONFIRMED' : (data.Payment_Stage === 'NOT_PAID' ? 'AWAITING_PAYMENT' : 'PROOF_SUBMITTED');
   data.Registration_Fee = feeFor(now);
+  data.Status = existing.status || 'PENDING_PAYMENT_CONFIRMATION';
+  data.Payment_Status = existing.paymentStatus === 'CONFIRMED' ? 'CONFIRMED' : (data.Payment_Stage === 'NOT_PAID' ? 'AWAITING_PAYMENT' : (Math.abs(data.Amount_Paid-data.Registration_Fee)>0.009?'PROOF_SUBMITTED_AMOUNT_MISMATCH':'PROOF_SUBMITTED'));
   data.Currency = 'EUR';
   data.Fee_Basis = data.Registration_Fee === 400 ? 'AUTHOR_OR_EARLY_ON_OR_BEFORE_2026-10-31' : 'LATE_AFTER_2026-10-31';
   data.Excursion_Fee_Per_Person_USD = EXCURSION_FEE_USD;
@@ -97,7 +98,7 @@ function saveRegistration(input) {
   data.Form_Schema_Version = SCHEMA_VERSION;
   data.Record_File_URL = saveRecordFile(registrationFolder, data);
   writeSheetRecord(sheet,data,existing.rowNumber);
-  return json({success:true,referenceId:referenceId,status:data.Status,paymentStatus:data.Payment_Status});
+  return json({success:true,referenceId:referenceId,editToken:issueEditToken(referenceId,data.Email),status:data.Status,paymentStatus:data.Payment_Status});
 }
 
 function normaliseRegistration(input) {
@@ -155,7 +156,7 @@ function getRegistration(params) {
   if(!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(ref)||!email)return json({success:false,error:'Reference ID and email are required.'});
   const sheet=getResources().sheet, values=sheet.getDataRange().getValues();
   const headers=values[0]||[],map=headerMap(headers),refIndex=map.Reference_ID,emailIndex=map.Email;
-  for(let r=1;r<values.length;r++)if(String(values[r][refIndex])===ref&&String(values[r][emailIndex]).toLowerCase()===email){const out=rowToObject(headers,values[r]);const hasProof=!!out.Payment_Proof_Files;delete out.Payment_Proof_Files;delete out.Record_File_URL;if(hasProof)out.Payment_Proof_Base64='(uploaded — see folder)';return json({success:true,data:out});}
+  for(let r=1;r<values.length;r++)if(String(values[r][refIndex])===ref&&String(values[r][emailIndex]).toLowerCase()===email){const out=rowToObject(headers,values[r]);const hasProof=!!out.Payment_Proof_Files;delete out.Payment_Proof_Files;delete out.Record_File_URL;if(hasProof)out.Payment_Proof_Base64='(uploaded — see folder)';return json({success:true,data:out,editToken:issueEditToken(ref,email)});}
   return json({success:false,error:'No matching registration was found.'});
 }
 
@@ -266,7 +267,7 @@ function ensureSchema(sheet) {
 function findRow(sheet, ref, email) {
   const values=sheet.getDataRange().getValues();
   const headers=values[0]||[],map=headerMap(headers),refIndex=map.Reference_ID,emailIndex=map.Email,proofIndex=map.Payment_Proof_Files;
-  for(let r=1;r<values.length;r++)if((ref&&String(values[r][refIndex])===ref)||(!ref&&String(values[r][emailIndex]).toLowerCase()===String(email).toLowerCase())){const item=rowToObject(headers,values[r]);return{rowNumber:r+1,referenceId:String(values[r][refIndex]),submissionDate:item.Submission_Date,status:item.Status,paymentStatus:item.Payment_Status,paymentProofFiles:values[r][proofIndex]};}
+  for(let r=1;r<values.length;r++)if((ref&&String(values[r][refIndex])===ref)||(!ref&&String(values[r][emailIndex]).toLowerCase()===String(email).toLowerCase())){const item=rowToObject(headers,values[r]);return{rowNumber:r+1,referenceId:String(values[r][refIndex]),email:String(values[r][emailIndex]),submissionDate:item.Submission_Date,status:item.Status,paymentStatus:item.Payment_Status,paymentProofFiles:values[r][proofIndex]};}
   return {};
 }
 
@@ -309,18 +310,23 @@ function getOrCreateSubfolder(parent,name){
 
 function saveInvoiceVersion(body){
   const referenceId=clean(body.referenceId,40).toUpperCase();
+  const email=clean(body.email,300).toLowerCase();
   if(!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(referenceId))return json({success:false,error:'Invalid reference ID.'});
+  const resources=getResources(),existing=findRow(resources.sheet,referenceId,'');
+  if(!existing.rowNumber||existing.email.toLowerCase()!==email||!verifyEditToken(body.editToken,referenceId,email))return json({success:false,error:'Invoice archiving requires a valid registration session. Reload the registration using its reference and email.'});
+  const cache=CacheService.getScriptCache(),rateKey='invoice-archive:'+referenceId,archiveCount=Number(cache.get(rateKey)||0);
+  if(archiveCount>=20)return json({success:false,error:'Too many invoice versions were requested recently. Please retry later or contact the organiser.'});
   const file=body.file||{};
   if(file.mimeType!=='application/pdf'||!file.data)return json({success:false,error:'A valid PDF invoice is required.'});
   if(Math.ceil(String(file.data).length*3/4)>MAX_UPLOAD_BYTES)return json({success:false,error:'The invoice PDF is too large to archive.'});
   const decoded=Utilities.base64Decode(file.data);
   if(decoded.length<4||decoded[0]!==37||decoded[1]!==80||decoded[2]!==68||decoded[3]!==70)return json({success:false,error:'The archived invoice is not a valid PDF file.'});
-  const resources=getResources();
   const registrationFolder=getRegistrationFolder(resources.recordsFolder,referenceId);
   const invoiceFolder=getOrCreateSubfolder(registrationFolder,INVOICES_FOLDER);
   const stamp=Utilities.formatDate(new Date(),Session.getScriptTimeZone()||'Asia/Colombo','yyyyMMdd_HHmmss_SSS');
   const name='NEW2AN2026_Proforma_'+referenceId+'_'+stamp+'_'+Utilities.getUuid().slice(0,8)+'.pdf';
   const saved=invoiceFolder.createFile(Utilities.newBlob(decoded,'application/pdf',name));
+  cache.put(rateKey,String(archiveCount+1),3600);
   return json({success:true,referenceId:referenceId,fileName:saved.getName(),fileUrl:saved.getUrl(),registrationFolderUrl:registrationFolder.getUrl()});
 }
 
@@ -352,6 +358,26 @@ function feeFor(date){return date<=EARLY_DEADLINE?400:500;}
 function roundMoney(value){return Math.round(Number(value)*100)/100;}
 function roundRate(value){return Math.round(Number(value)*1000000)/1000000;}
 function makeReferenceId(){return 'NEW2AN2026-'+Utilities.getUuid().replace(/-/g,'').slice(0,9).toUpperCase();}
+function editTokenSecret(){
+  const props=PropertiesService.getScriptProperties();let secret=props.getProperty('EDIT_TOKEN_SECRET');
+  if(!secret){secret=Utilities.getUuid()+Utilities.getUuid()+Utilities.getUuid();props.setProperty('EDIT_TOKEN_SECRET',secret);}
+  return secret;
+}
+function issueEditToken(referenceId,email){
+  const payload=[referenceId,String(email).toLowerCase(),Date.now()+2*60*60*1000].join('|');
+  const encoded=Utilities.base64EncodeWebSafe(payload,Utilities.Charset.UTF_8).replace(/=+$/,'');
+  const signature=Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(encoded,editTokenSecret())).replace(/=+$/,'');
+  return encoded+'.'+signature;
+}
+function verifyEditToken(token,referenceId,email){
+  try{
+    const parts=String(token||'').split('.');if(parts.length!==2)return false;
+    const expected=Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(parts[0],editTokenSecret())).replace(/=+$/,'');
+    if(expected!==parts[1])return false;
+    const payload=Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[0])).getDataAsString().split('|');
+    return payload[0]===referenceId&&payload[1]===String(email).toLowerCase()&&Number(payload[2])>=Date.now();
+  }catch(_){return false;}
+}
 function clean(value,max){return String(value==null?'':value).replace(/[\u0000-\u001F\u007F]/g,' ').trim().slice(0,max||500);}
 function serialise(value){return typeof value==='boolean'?value:(value==null?'':value);}
 function safeError(error){Logger.log(error&&error.stack||error);return String(error&&error.message||error||'Unexpected error.').slice(0,500);}
@@ -367,5 +393,6 @@ function setupNEW2AN(){
     props.setProperty('MAIN_FOLDER_ID',folder.getId());
   }
   const resources=getResources();
+  editTokenSecret();
   return{success:true,mainFolderName:folder.getName(),mainFolderId:folder.getId(),mainFolderUrl:folder.getUrl(),spreadsheetName:resources.sheet.getParent().getName(),spreadsheetUrl:resources.sheet.getParent().getUrl(),sheetTab:resources.sheet.getName(),registrationFoldersRoot:resources.recordsFolder.getName(),invoiceSubfolder:INVOICES_FOLDER,paymentProofSubfolder:PAYMENT_PROOFS_FOLDER,headers:HEADERS.length};
 }

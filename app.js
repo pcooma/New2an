@@ -24,6 +24,7 @@ const role = document.getElementById('participant-role');
 let submissions = [];
 let adminToken = sessionStorage.getItem(CONFIG.tokenKey) || '';
 let currentReferenceId = '';
+let editToken = '';
 let paymentProofFiles = [];
 let paymentProofPreviouslyUploaded = false;
 let workshopSettings = [{id:'seeing-through-ai-2026',title:'Seeing Through AI: Deep Learning for Computer Vision',date:'2026-07-21',time:'09:30–12:30',venue:'G906, New Building',fee:0,currency:'EUR',status:'completed',contact:'Mr. Amila Karunanayake, +94 77 443 9069'}];
@@ -88,6 +89,8 @@ function clarifyParticipantCopy() {
   setLabel('Accessibility_Needs','Accessibility or mobility assistance you may need');
   setLabel('Emergency_Contact_Name','Emergency contact name');
   setLabel('Emergency_Contact_Phone','Emergency contact telephone number');
+  const emergencyPhone=form.elements.Emergency_Contact_Phone?.closest('label');
+  if(emergencyPhone&&!document.getElementById('emergency-privacy-note'))emergencyPhone.insertAdjacentHTML('afterend','<p class="microcopy span-2" id="emergency-privacy-note">Collected only so the organising team can contact this person in an emergency affecting your Colombo visit. Access is limited to authorised event personnel and the details should be deleted after the event retention period defined in the privacy policy.</p>');
   setLabel('Visit_Notes','Other information about your travel, hotel or accompanying guests');
   setLabel('Support_Category','What do you need help with?');
   setLabel('Support_Reply_Method','How would you prefer us to reply?');
@@ -150,9 +153,9 @@ function updatePublicWorkshopVisibility(hasOpenWorkshops) {
 }
 
 const onlineOption = Array.from(form.elements.Attendance_Mode.options).find(option => option.value === 'Online access');
-if (onlineOption) onlineOption.textContent = 'Online participation — subject to organiser approval';
+if (onlineOption) onlineOption.textContent = 'Request online participation — not yet approved';
 const paperNote = papers.nextElementSibling;
-if (paperNote) paperNote.insertAdjacentHTML('beforeend', '<br><strong>Accepted authors:</strong> published pages also state that payment is required before camera-ready submission. Because the camera-ready and registration dates do not align, confirm your applicable payment deadline with new2an@crisglobal.org.');
+if (paperNote) paperNote.innerHTML='Online access is included in the published registration benefits, but this request does not confirm remote presentation, certification, or fulfilment of an accepted author’s presentation obligation.<br><strong>Accepted authors:</strong> published pages also state that payment is required before camera-ready submission. Because the camera-ready and registration dates do not align, confirm your applicable payment deadline with new2an@crisglobal.org.';
 updatePublicWorkshopVisibility(false);
 
 function currentFee(now = new Date()) {
@@ -258,10 +261,13 @@ form.addEventListener('submit', async event => {
   const button = document.getElementById('submit-btn');
   button.disabled = true; button.textContent = 'Saving securely…';
   try {
-    if (!currentReferenceId) currentReferenceId = makeReferenceId();
-    data.Reference_ID = currentReferenceId;
+    if(currentReferenceId)data.Reference_ID=currentReferenceId;
     data.Payment_Proof_Base64 = paymentProofFiles.length ? await Promise.all(paymentProofFiles.map(fileToBase64)) : (paymentProofPreviouslyUploaded ? '(uploaded — see folder)' : []);
-    const result = await api({action:'submitRegistration', data});
+    const uploadedProofs=paymentProofFiles.length>0;
+    const result = await api({action:'submitRegistration',data,editToken});
+    currentReferenceId=result.referenceId;editToken=result.editToken||'';
+    document.getElementById('reference-display').textContent=`Reference ID: ${currentReferenceId}`;
+    if(uploadedProofs){paymentProofFiles=[];paymentProofPreviouslyUploaded=true;renderProofList();}
     localStorage.removeItem(CONFIG.draftKey);
     localStorage.setItem('new2an2026_last_reference', JSON.stringify({referenceId:result.referenceId,email:data.Email}));
     setMessage(`Registration saved. Your reference is ${result.referenceId}. Payment instructions will follow when officially approved.`, 'success');
@@ -290,12 +296,6 @@ function restore(data) {
   updateAttendanceVisibility();
   updateBillingVisibility();
   renderProofList();
-}
-
-function makeReferenceId() {
-  const bytes = new Uint8Array(6);
-  crypto.getRandomValues(bytes);
-  return `NEW2AN2026-${Array.from(bytes, b => b.toString(16).padStart(2,'0')).join('').slice(0,9).toUpperCase()}`;
 }
 
 function fileToBase64(file) {
@@ -457,10 +457,20 @@ async function generateProforma() {
   if (!window.jspdf) { setMessage('The PDF library is unavailable. Check your connection and retry.', 'error'); return; }
   const settingsMissing=[['issuerLegalName','issuer legal name'],['issuerAddress','issuer address'],['issuerTaxStatement','tax statement'],['issuerEmail','issuer email'],['paymentInstructions','payment instructions']].filter(([key])=>!String(publicSettings[key]||'').trim()).map(([,label])=>label);
   if(settingsMissing.length){setMessage(`The organiser must configure the invoice ${settingsMissing.join(', ')} before an organization-ready proforma can be generated.`,'error');return;}
-  if (!currentReferenceId) currentReferenceId = makeReferenceId();
-  document.getElementById('reference-display').textContent = `Reference ID: ${currentReferenceId}`;
-  const data = toObject(form);
+  if(!form.reportValidity()){setMessage('Complete the registration and policy agreement before generating the invoice.','error');return;}
+  const data = toObject(form),businessIssue=validateBusinessRules(data);
+  if(businessIssue){setMessage(businessIssue,'error');return;}
   if(data.Excursion_Interest==='Yes'&&!(Number(publicSettings.usdToEurRate)>0)){setMessage('The organiser has not configured the excursion USD-to-EUR rate yet, so an excursion invoice cannot be generated. Please retry later or contact the organiser.','error');return;}
+  const archiveButton=document.getElementById('proforma-btn');archiveButton.disabled=true;archiveButton.textContent='Securing registration...';
+  try{
+    if(currentReferenceId)data.Reference_ID=currentReferenceId;
+    data.Payment_Proof_Base64=paymentProofFiles.length?await Promise.all(paymentProofFiles.map(fileToBase64)):(paymentProofPreviouslyUploaded?'(uploaded — see folder)':[]);
+    const uploadedProofs=paymentProofFiles.length>0;
+    const saved=await api({action:'submitRegistration',data,editToken});
+    currentReferenceId=saved.referenceId;editToken=saved.editToken||'';
+    if(uploadedProofs){paymentProofFiles=[];paymentProofPreviouslyUploaded=true;renderProofList();}
+    document.getElementById('reference-display').textContent=`Reference ID: ${currentReferenceId}`;
+  }catch(error){archiveButton.disabled=false;archiveButton.textContent='Download pre-payment invoice PDF';setMessage(error.name==='AbortError'?'The registration service took too long to respond. Please retry.':error.message,'error');return;}
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({unit:'mm',format:'a4'});
   const left=14,right=196,width=right-left,navy=[9,35,60],ink=[23,39,51],muted=[90,105,112],rule=[205,218,222];
@@ -484,11 +494,11 @@ async function generateProforma() {
   }
   doc.setDrawColor(...rule);doc.line(left,y,right,y);y+=5;doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(...navy);doc.text('Tax and payment',left,y);y+=4;doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text('TAX TREATMENT',left,y);doc.text('PAYMENT INSTRUCTIONS',107,y);y+=3.5;doc.setFont('helvetica','normal');doc.setFontSize(6.8);doc.setTextColor(...ink);doc.text(fit(publicSettings.issuerTaxStatement,84,3),left,y);doc.text(fit(publicSettings.paymentInstructions,89,3),107,y);y+=12;doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text('PAYMENT REFERENCE',left,y);doc.text('TERMS',107,y);doc.setFont('helvetica','normal');doc.setFontSize(6.8);doc.setTextColor(...ink);doc.text(currentReferenceId,left,y+3.5);doc.text(fit(publicSettings.termsUrl,89,1),107,y+3.5);
   doc.setDrawColor(220);doc.line(left,281,right,281);doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text(`System generated | ${publicSettings.issuerEmail}`,left,286);doc.text('Page 1 of 1',right,286,{align:'right'});
-  const button=document.getElementById('proforma-btn');
+  const button=archiveButton;
   button.disabled=true;button.textContent='Archiving invoice...';
   try{
     const pdfData=doc.output('datauristring').split(',')[1];
-    await api({action:'saveInvoiceVersion',referenceId:currentReferenceId,email:data.Email,file:{mimeType:'application/pdf',data:pdfData}});
+    await api({action:'saveInvoiceVersion',referenceId:currentReferenceId,email:data.Email,editToken,file:{mimeType:'application/pdf',data:pdfData}});
     doc.save(`NEW2AN2026_Proforma_${currentReferenceId}.pdf`);
     localStorage.setItem('new2an2026_last_reference',JSON.stringify({referenceId:currentReferenceId,email:data.Email}));
     setMessage(`Pre-payment invoice archived in the registration folder and downloaded. Keep reference ID ${currentReferenceId}; you will need it for payment and to reopen this registration.`, 'success');
@@ -504,7 +514,7 @@ document.getElementById('lookup-btn').addEventListener('click', async () => {
   const ref = document.getElementById('lookup-ref').value.trim();
   const email = document.getElementById('lookup-email').value.trim();
   if (!ref || !email) { setMessage('Enter both the reference ID and registration email.', 'error'); return; }
-  try { const result = await api(null, `?action=getRegistration&ref=${encodeURIComponent(ref)}&email=${encodeURIComponent(email)}`); restore(result.data); setMessage(`Loaded ${ref}.`, 'success'); form.scrollIntoView({behavior:'smooth'}); }
+  try { const result = await api(null, `?action=getRegistration&ref=${encodeURIComponent(ref)}&email=${encodeURIComponent(email)}`); editToken=result.editToken||'';restore(result.data); setMessage(`Loaded ${ref}. You can securely update this registration for the next two hours.`, 'success'); form.scrollIntoView({behavior:'smooth'}); }
   catch(error) { setMessage(error.message, 'error'); }
 });
 
