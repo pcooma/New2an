@@ -742,6 +742,17 @@ function renderWhatsappSupport(){
   if(data.categoryKey&&data.topicLabel){message.textContent=data.message;preview.hidden=false;}else preview.hidden=true;
 }
 
+function updateWhatsappDetailsRequirement(){
+  const topic=document.getElementById('whatsapp-topic');
+  const details=document.getElementById('whatsapp-details');
+  const marker=document.getElementById('whatsapp-details-required');
+  const hint=document.getElementById('whatsapp-details-hint');
+  const required=/^Other\b/.test(String(topic?.value||''));
+  if(details){details.required=required;details.placeholder=required?'Describe your question or issue. Do not include passwords or card details.':'Optional: add any detail that will help the recipient. Do not include passwords or card details.';}
+  if(marker)marker.hidden=!required;
+  if(hint)hint.textContent=required?'Required because you selected Other.':'Optional for the selected question.';
+}
+
 function populateWhatsappTopics(){
   const category=document.getElementById('whatsapp-category');
   const topic=document.getElementById('whatsapp-topic');
@@ -749,6 +760,7 @@ function populateWhatsappTopics(){
   topic.replaceChildren(new Option(topics.length?'Select the closest question':'Select a query area first',''));
   topics.forEach(label=>topic.add(new Option(label,label)));
   topic.disabled=!topics.length;
+  updateWhatsappDetailsRequirement();
   renderWhatsappSupport();
 }
 
@@ -778,6 +790,7 @@ function initWhatsappSupport(){
   toggle.addEventListener('click',()=>setWhatsappPanel(panel.hidden));
   close.addEventListener('click',()=>setWhatsappPanel(false));
   category.addEventListener('change',populateWhatsappTopics);
+  document.getElementById('whatsapp-topic').addEventListener('change',()=>{updateWhatsappDetailsRequirement();renderWhatsappSupport();});
   supportForm.addEventListener('input',()=>{status.textContent='';renderWhatsappSupport();});
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!panel.hidden)setWhatsappPanel(false);});
   document.addEventListener('pointerdown',event=>{if(!panel.hidden&&!support.contains(event.target))setWhatsappPanel(false);});

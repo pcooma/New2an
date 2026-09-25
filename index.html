@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="style.css?v=5">
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script defer src="app.js?v=12"></script>
+  <script defer src="app.js?v=13"></script>
 </head>
 <body>
   <header class="hero"><img src="new2an-banner.png" alt="NEW2AN 2026, Colombo coastal panorama" width="2500" height="534"><div class="hero-shade"></div><div class="hero-copy"><p class="eyebrow">26th International Conference</p><h1>Registration &amp; visit planning</h1><p>15–17 December 2026 · Colombo, Sri Lanka</p></div></header>
@@ -99,7 +99,7 @@
         <label>Payment or transaction reference, if relevant<input id="whatsapp-payment-reference"></label>
         <label>What is your query about? <b>*</b><select id="whatsapp-category" required><option value="">Select a committee or support area</option><option value="registration">Conference registration or payment proof</option><option value="hackathon">Global Undergraduate Hackathon</option><option value="three_mt">3MT Competition</option><option value="award">Excellence Award</option><option value="travel">Travel, accommodation or excursion</option><option value="industry">Industry Forum or workshops</option><option value="panel">Panel discussion</option><option value="invoice">Wrong invoice value or billing details</option><option value="system">Technical or registration-system issue</option><option value="other">Other registration query</option></select></label>
         <label>Choose the closest question <b>*</b><select id="whatsapp-topic" required disabled><option value="">Select a query area first</option></select></label>
-        <label>Your question or issue <b>*</b><textarea id="whatsapp-details" rows="3" required placeholder="Add the details the recipient will need. Do not include passwords or card details."></textarea></label>
+        <label>Your question or additional details <b id="whatsapp-details-required" hidden>*</b><textarea id="whatsapp-details" rows="3" placeholder="Optional unless you choose an Other topic. Do not include passwords or card details."></textarea><small id="whatsapp-details-hint">Optional for a listed question; required when you choose Other.</small></label>
         <div class="whatsapp-recipient" id="whatsapp-recipient" hidden></div>
         <div class="whatsapp-preview" id="whatsapp-preview" hidden><strong>Message preview</strong><pre id="whatsapp-message"></pre></div>
         <p class="whatsapp-programme-note">Technical programme or paper-review query? No WhatsApp contact was supplied for that committee. Email <a href="mailto:new2an@crisglobal.org">new2an@crisglobal.org</a>.</p>

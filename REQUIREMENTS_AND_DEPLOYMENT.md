@@ -98,7 +98,7 @@ The floating WhatsApp help panel uses the organiser-supplied `Contact Details.jp
 
 The source leaves the Technical Program Committee contact name and number blank. The platform therefore does not invent a WhatsApp route for paper-review or technical-programme decisions and instead shows the official `new2an@crisglobal.org` email. “Other registration query” falls back to the Conference Registration contact.
 
-The panel collects the participant name, international-format reply number and email, plus optional registration reference, paper/CMT ID and payment reference. It displays the responsible recipient and a plain-text preview before opening `wa.me`. The website does not store or transmit the inquiry itself, and the participant is warned not to include passwords or card details.
+The panel collects the participant name, international-format reply number and email, plus optional registration reference, paper/CMT ID and payment reference. A predefined question may be sent without repeating it in free text; the question/details field becomes mandatory whenever an `Other` topic is selected. The panel displays the responsible recipient and a plain-text preview before opening `wa.me`. The website does not store or transmit the inquiry itself, and the participant is warned not to include passwords or card details.
 
 ## Proforma boundary
 
