@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="Secure NEW2AN 2026 travel and excursion details for registered excursion participants.">
+  <title>NEW2AN 2026 | Travel &amp; excursion details</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Libre+Caslon+Display&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="extended.css?v=6">
+  <script defer src="excursion.js?v=1"></script>
+</head>
+<body class="travel-page">
+  <header class="travel-hero">
+    <div class="wrap travel-hero-inner"><div><p class="eyebrow">NEW2AN 2026 · Colombo</p><h1>Travel &amp; excursion details</h1><p>A secure follow-up for registered participants who selected the conference excursion.</p></div><div class="travel-step"><span>Follow-up form</span><strong>Before travel</strong></div></div>
+  </header>
+  <nav class="topbar"><a class="brand" href="index.html#registration">NEW<span>2</span>AN 2026</a><div><a class="nav-link" href="index.html#registration">Main registration</a><a class="nav-link active" href="excursion.html">Travel &amp; excursion</a></div></nav>
+
+  <main class="wrap travel-main">
+    <section class="travel-intro"><div><p class="eyebrow ink">For confirmed excursion participants</p><h2>Complete the organiser’s travel request</h2><p>This page reproduces the organiser’s new follow-up questions. Your reference and registration email are required so these details are added to the correct participant record.</p></div><aside><strong>Have these ready</strong><span>Registration reference</span><span>Passport and travel dates</span><span>Passport bio page, only if flight booking is requested</span></aside></section>
+
+    <section class="privacy-callout"><strong>Why this is separate</strong><p>Passport and birth details are sensitive. They are requested only when you ask the organisers to arrange your air ticket. The passport file is stored in the restricted Drive folder for your registration and is not shown in the public website.</p></section>
+
+    <section id="unlock-card" class="lookup-card travel-lookup">
+      <div><strong>Open your follow-up form</strong><span>Use the reference and email from your NEW2AN registration.</span></div>
+      <input id="travel-reference" aria-label="Registration reference" placeholder="NEW2AN2026-XXXXXXX" autocomplete="off">
+      <input id="travel-email" type="email" aria-label="Registration email" placeholder="Registration email" autocomplete="email">
+      <button type="button" id="travel-load" class="btn primary">Continue securely</button>
+      <p id="travel-load-message" class="form-message span-all" role="status" aria-live="polite"></p>
+    </section>
+
+    <form id="travel-form" class="form-shell travel-form" hidden novalidate>
+      <div class="travel-progress"><span class="active">1 Verify</span><span>2 Flight &amp; passport</span><span>3 Confirm</span></div>
+      <section class="form-section">
+        <div class="section-heading"><span>01</span><div><h3>Verified registration</h3><p>We reuse your saved details rather than asking for them again.</p></div></div>
+        <div class="record-banner"><div><small>Registration reference</small><strong id="loaded-reference"></strong></div><div><small>Participant</small><strong id="loaded-participant"></strong></div><div><small>Excursion</small><strong>Yes</strong></div><div><small>Flight assistance</small><strong>Requested</strong></div></div>
+        <input name="Email" type="hidden">
+      </section>
+
+      <section id="ticket-details" class="form-section">
+        <div class="section-heading"><span>02</span><div><h3>Flight &amp; passport requirements</h3><p>Only details not already held in your registration are requested below.</p></div></div>
+        <div class="identity-source"><strong>Reused from registration</strong><span id="reused-identity"></span></div>
+        <div class="grid two"><label>Departure city / airport <b>*</b><input name="Ticket_Departure_City_Airport" required></label><label>Preferred departure date from home country <b>*</b><input name="Preferred_Departure_Home_Date" type="date" required></label><label>Preferred arrival date in Sri Lanka <b>*</b><input name="Preferred_Arrival_Sri_Lanka_Date" type="date" required></label><label>Preferred departure date from Sri Lanka <b>*</b><input name="Preferred_Departure_Sri_Lanka_Date" type="date" required></label><label>Preferred departure time from Sri Lanka <b>*</b><input name="Preferred_Departure_Sri_Lanka_Time" type="time" required></label><label>Destination city / airport <b>*</b><input name="Ticket_Destination_City_Airport" required></label><label>Passport number <b>*</b><input name="Passport_Number" autocomplete="off" required></label><label>Date of birth <b>*</b><input name="Date_of_Birth" type="date" required></label><label>Passport date of issue <b>*</b><input name="Passport_Issue_Date" type="date" required></label><label>Passport date of expiry <b>*</b><input name="Passport_Expiry_Date" type="date" required></label><label>Place / country of birth <b>*</b><input name="Place_Country_of_Birth" required></label><label>Upload passport bio page <b>*</b><input id="passport-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"><small>One PDF or image, maximum 5 MB. A replacement is archived as a new version.</small></label><p id="passport-file-status" class="microcopy span-2">No passport file selected.</p></div>
+      </section>
+
+      <section class="form-section">
+        <div class="section-heading"><span>03</span><div><h3>Review and submit</h3><p>Submitting records the details against your existing registration; it does not confirm a ticket purchase.</p></div></div>
+        <label class="check"><input type="checkbox" name="Travel_Details_Consent" required><span>I confirm that the details are accurate and authorise the NEW2AN organising team to use and, where necessary, share them with its approved travel service provider solely to coordinate the requested travel arrangements. <b>*</b></span></label>
+        <button type="submit" id="travel-submit" class="btn primary submit">Save travel &amp; excursion details</button>
+        <p id="travel-message" class="form-message" role="status" aria-live="polite"></p>
+      </section>
+    </form>
+  </main>
+  <footer><span>NEW2AN 2026 · 15–17 December 2026</span><a href="mailto:new2an@crisglobal.org">new2an@crisglobal.org</a></footer>
+</body>
+</html>

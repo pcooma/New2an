@@ -17,8 +17,9 @@ const SHEET_TAB_NAME = 'Registrations';
 const RECORDS_FOLDER = '01 - Participant Registration Records';
 const INVOICES_FOLDER = 'Invoices';
 const PAYMENT_PROOFS_FOLDER = 'Payment Proofs';
+const TRAVEL_DOCUMENTS_FOLDER = 'Travel Documents';
 const EARLY_DEADLINE = new Date('2026-10-31T23:59:59+05:30');
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const EXCURSION_FEE_USD = 50;
 const ALLOWED_UPLOAD_MIME = ['application/pdf','image/jpeg','image/png','image/webp'];
@@ -43,7 +44,12 @@ const HEADERS = [
   'Payment_Stage','Transaction_Reference','Amount_Paid','Payment_Currency','Payment_Proof_Files',
   'Policy_Agreement','Form_Schema_Version',
   'Record_File_URL','Excursion_Fee_Per_Person_USD','Excursion_Total_USD',
-  'Excursion_USD_to_EUR_Rate','Excursion_Total_EUR_Indicative'
+  'Excursion_USD_to_EUR_Rate','Excursion_Total_EUR_Indicative',
+  'Travel_Details_Status','Travel_Details_Last_Updated','Air_Ticket_Assistance',
+  'Ticket_Departure_City_Airport','Preferred_Departure_Home_Date','Preferred_Arrival_Sri_Lanka_Date',
+  'Preferred_Departure_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Time','Ticket_Destination_City_Airport',
+  'Passport_Number','Date_of_Birth','Passport_Issue_Date',
+  'Passport_Expiry_Date','Place_Country_of_Birth','Passport_Bio_Page_Files','Travel_Details_Consent'
 ];
 
 function doGet(e) {
@@ -65,6 +71,7 @@ function doPost(e) {
     if (body.action === 'saveWorkshops') return saveWorkshops(body);
     if (body.action === 'savePublicSettings') return savePublicSettings(body);
     if (body.action === 'saveInvoiceVersion') return saveInvoiceVersion(body);
+    if (body.action === 'submitTravelDetails') return saveTravelDetails(body.data || {},body.editToken);
     if (body.action === 'submitRegistration') return saveRegistration(body.data || {},body.editToken);
     return json({success:false,error:'Unsupported action.'});
   } catch (error) { return json({success:false,error:safeError(error)}); }
@@ -195,8 +202,53 @@ function getRegistration(params) {
   if(!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(ref)||!email)return json({success:false,error:'Reference ID and email are required.'});
   const sheet=getResources().sheet, values=sheet.getDataRange().getValues();
   const headers=values[0]||[],map=headerMap(headers),refIndex=map.Reference_ID,emailIndex=map.Email;
-  for(let r=1;r<values.length;r++)if(String(values[r][refIndex])===ref&&String(values[r][emailIndex]).toLowerCase()===email){const out=rowToObject(headers,values[r]);out.Participant_Role=LEGACY_PARTICIPANT_ROLES[out.Participant_Role]||out.Participant_Role;if(!out.Registration_Category)out.Registration_Category=out.Participant_Role==='Author / presenting author'?'INT_AUTHOR':'INT_NON_AUTHOR';const hasProof=!!out.Payment_Proof_Files;delete out.Payment_Proof_Files;delete out.Record_File_URL;if(hasProof)out.Payment_Proof_Base64='(uploaded — see folder)';return json({success:true,data:out,editToken:issueEditToken(ref,email)});}
+  for(let r=1;r<values.length;r++)if(String(values[r][refIndex])===ref&&String(values[r][emailIndex]).toLowerCase()===email){const out=rowToObject(headers,values[r]);out.Participant_Role=LEGACY_PARTICIPANT_ROLES[out.Participant_Role]||out.Participant_Role;if(!out.Registration_Category)out.Registration_Category=out.Participant_Role==='Author / presenting author'?'INT_AUTHOR':'INT_NON_AUTHOR';const hasProof=!!out.Payment_Proof_Files,hasPassport=!!out.Passport_Bio_Page_Files;delete out.Payment_Proof_Files;delete out.Passport_Bio_Page_Files;delete out.Record_File_URL;if(hasProof)out.Payment_Proof_Base64='(uploaded — see folder)';if(hasPassport)out.Passport_Bio_Page_Base64='(uploaded — see folder)';return json({success:true,data:out,editToken:issueEditToken(ref,email)});}
   return json({success:false,error:'No matching registration was found.'});
+}
+
+function saveTravelDetails(input,editToken) {
+  const referenceId=clean(input.Reference_ID,40).toUpperCase(),email=clean(input.Email,300).toLowerCase();
+  if(!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(referenceId)||!email)return json({success:false,error:'Reference ID and registration email are required.'});
+  const resources=getResources(),existing=findRow(resources.sheet,referenceId,'');
+  if(!existing.rowNumber||existing.email.toLowerCase()!==email||!verifyEditToken(editToken,referenceId,email))return json({success:false,error:'Reload the registration with its reference and email before saving travel details.'});
+  const values=resources.sheet.getDataRange().getValues(),headers=values[0]||[],stored=rowToObject(headers,values[existing.rowNumber-1]);
+  if(stored.Excursion_Interest!=='Yes')return json({success:false,error:'This follow-up form is available only to participants whose registration says Yes to the excursion. Update the main registration first if needed.'});
+  const flightRequested=stored.Travel_Agency_Assistance==='Yes — flight options'||stored.Travel_Agency_Assistance==='Yes — flights and transfer';
+  if(!flightRequested)return json({success:false,error:'Your registration does not request organiser flight assistance. No additional passport or ticket details are required.'});
+  const data=normaliseTravelDetails(input),errors=validateTravelDetails(data,!!stored.Passport_Bio_Page_Files);
+  if(errors.length)return json({success:false,error:errors.join(' ')});
+  const registrationFolder=getRegistrationFolder(resources.recordsFolder,referenceId);
+  const passportUrls=saveTravelDocuments(registrationFolder,data.Passport_Bio_Page_Base64);
+  data.Passport_Bio_Page_Files=passportUrls.length?[stored.Passport_Bio_Page_Files].concat(passportUrls).filter(Boolean).join('\n'):(stored.Passport_Bio_Page_Files||'');
+  delete data.Passport_Bio_Page_Base64;
+  data.Reference_ID=referenceId;data.Email=email;data.Air_Ticket_Assistance='Yes';data.Travel_Details_Status='SUBMITTED';data.Travel_Details_Last_Updated=new Date().toISOString();
+  const merged=Object.assign({},stored,data);
+  merged.Record_File_URL=saveRecordFile(registrationFolder,merged);data.Record_File_URL=merged.Record_File_URL;
+  writeSheetRecord(resources.sheet,data,existing.rowNumber);
+  return json({success:true,referenceId:referenceId,status:data.Travel_Details_Status,passportOnFile:!!data.Passport_Bio_Page_Files,editToken:issueEditToken(referenceId,email)});
+}
+
+function normaliseTravelDetails(input){
+  const output={};
+  ['Ticket_Departure_City_Airport','Preferred_Departure_Home_Date','Preferred_Arrival_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Time','Ticket_Destination_City_Airport','Passport_Number','Date_of_Birth','Passport_Issue_Date','Passport_Expiry_Date','Place_Country_of_Birth'].forEach(function(key){output[key]=clean(input[key],300);});
+  output.Travel_Details_Consent=input.Travel_Details_Consent===true||String(input.Travel_Details_Consent).toLowerCase()==='true';
+  output.Passport_Bio_Page_Base64=input.Passport_Bio_Page_Base64;
+  return output;
+}
+
+function validateTravelDetails(d,hasPassportOnFile){
+  const errors=[];
+  if(!d.Travel_Details_Consent)errors.push('Consent is required before sensitive travel details can be stored.');
+  {
+    ['Ticket_Departure_City_Airport','Preferred_Departure_Home_Date','Preferred_Arrival_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Time','Ticket_Destination_City_Airport','Passport_Number','Date_of_Birth','Passport_Issue_Date','Passport_Expiry_Date','Place_Country_of_Birth'].forEach(function(key){if(!d[key])errors.push(key.replace(/_/g,' ')+' is required for organiser-arranged air travel.');});
+    if(d.Preferred_Arrival_Sri_Lanka_Date&&d.Preferred_Departure_Sri_Lanka_Date&&d.Preferred_Departure_Sri_Lanka_Date<d.Preferred_Arrival_Sri_Lanka_Date)errors.push('Departure from Sri Lanka cannot be before arrival in Sri Lanka.');
+    if(d.Passport_Issue_Date&&d.Passport_Expiry_Date&&d.Passport_Expiry_Date<=d.Passport_Issue_Date)errors.push('Passport expiry date must be after its issue date.');
+    const uploads=Array.isArray(d.Passport_Bio_Page_Base64)?d.Passport_Bio_Page_Base64:[];
+    if(!uploads.length&&!hasPassportOnFile)errors.push('Upload the passport bio page for organiser-arranged air travel.');
+    if(uploads.length>1)errors.push('Upload one passport bio-page file only.');
+    uploads.forEach(function(file){const issue=validateTravelUpload(file);if(issue)errors.push(issue);});
+  }
+  return errors;
 }
 
 function adminLogin(body) {
@@ -394,6 +446,27 @@ function savePaymentProofs(registrationFolder,uploads){
   }
 }
 
+function validateTravelUpload(file){
+  if(!file||!file.data)return 'The passport bio-page file is unreadable.';
+  if(ALLOWED_UPLOAD_MIME.indexOf(String(file.mimeType||''))<0)return 'The passport bio page must be a PDF, JPEG, PNG or WebP file.';
+  if(Math.ceil(String(file.data).length*3/4)>MAX_UPLOAD_BYTES)return 'The passport bio-page file must be 5 MB or smaller.';
+  return '';
+}
+
+function saveTravelDocuments(registrationFolder,uploads){
+  if(!Array.isArray(uploads)||!uploads.length)return [];
+  const folder=getOrCreateSubfolder(registrationFolder,TRAVEL_DOCUMENTS_FOLDER),created=[];
+  try{
+    uploads.forEach(function(file,index){
+      const safeName=clean(file.name,120).replace(/[^A-Za-z0-9._-]/g,'_')||('passport_bio_page_'+(index+1));
+      const stamp=Utilities.formatDate(new Date(),Session.getScriptTimeZone()||'Asia/Colombo','yyyyMMdd_HHmmss_SSS');
+      const blob=Utilities.newBlob(Utilities.base64Decode(file.data),file.mimeType,'passport_bio_page_'+stamp+'_'+Utilities.getUuid().slice(0,8)+'_'+safeName);
+      created.push(folder.createFile(blob));
+    });
+    return created.map(function(file){return file.getUrl();});
+  }catch(error){created.forEach(function(file){try{file.setTrashed(true);}catch(_){} });throw error;}
+}
+
 function saveRecordFile(registrationFolder,data) {
   const name='registration.json', files=registrationFolder.getFilesByName(name), body=JSON.stringify(data,null,2);
   if(files.hasNext()){const file=files.next();file.setContent(body);return file.getUrl();}
@@ -448,5 +521,5 @@ function setupNEW2AN(){
   }
   const resources=getResources();
   editTokenSecret();
-  return{success:true,mainFolderName:folder.getName(),mainFolderId:folder.getId(),mainFolderUrl:folder.getUrl(),spreadsheetName:resources.sheet.getParent().getName(),spreadsheetUrl:resources.sheet.getParent().getUrl(),sheetTab:resources.sheet.getName(),registrationFoldersRoot:resources.recordsFolder.getName(),invoiceSubfolder:INVOICES_FOLDER,paymentProofSubfolder:PAYMENT_PROOFS_FOLDER,headers:HEADERS.length};
+  return{success:true,mainFolderName:folder.getName(),mainFolderId:folder.getId(),mainFolderUrl:folder.getUrl(),spreadsheetName:resources.sheet.getParent().getName(),spreadsheetUrl:resources.sheet.getParent().getUrl(),sheetTab:resources.sheet.getName(),registrationFoldersRoot:resources.recordsFolder.getName(),invoiceSubfolder:INVOICES_FOLDER,paymentProofSubfolder:PAYMENT_PROOFS_FOLDER,travelDocumentsSubfolder:TRAVEL_DOCUMENTS_FOLDER,headers:HEADERS.length};
 }

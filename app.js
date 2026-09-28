@@ -647,8 +647,8 @@ document.getElementById('lookup-btn').addEventListener('click', async () => {
   catch(error) { setMessage(error.message, 'error'); }
 });
 
-document.querySelectorAll('.nav-link').forEach(button => button.addEventListener('click', () => {
-  document.querySelectorAll('.nav-link').forEach(x => x.classList.toggle('active', x === button));
+document.querySelectorAll('.nav-link[data-view]').forEach(button => button.addEventListener('click', () => {
+  document.querySelectorAll('.nav-link[data-view]').forEach(x => x.classList.toggle('active', x === button));
   document.querySelectorAll('.view').forEach(x => x.classList.remove('active'));
   document.getElementById(`${button.dataset.view}-view`).classList.add('active');
   if (button.dataset.view === 'dashboard' && adminToken) loadSubmissions();
@@ -823,6 +823,7 @@ document.getElementById('export-btn').addEventListener('click', () => {
   add('Travel Logistics',submissions.filter(r=>r.Attendance_Mode==='In person in Colombo').map(r=>pick(r,['Reference_ID','Full_Name','Phone','Arrival_Date','Arrival_Details','Departure_Date','Departure_Details','Travel_Agency_Assistance','Venue_Transport','Visa_Support','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone'])));
   add('Accommodation',submissions.filter(r=>r.Accommodation_Assistance&&r.Accommodation_Assistance!=='No').map(r=>pick(r,['Reference_ID','Full_Name','Email','Phone','Accommodation_Assistance','Room_Preference','Arrival_Date','Departure_Date','Visit_Notes'])));
   add('Excursion',submissions.filter(r=>r.Excursion_Interest&&r.Excursion_Interest!=='No').map(r=>pick(r,['Reference_ID','Full_Name','Phone','Excursion_Interest','Excursion_Participant_Count','Excursion_Fee_Per_Person_USD','Excursion_Total_USD','Excursion_USD_to_EUR_Rate','Excursion_Total_EUR_Indicative','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language'])));
+  add('Air Ticket Requests',submissions.filter(r=>r.Travel_Details_Status||r.Air_Ticket_Assistance).map(r=>pick(r,['Reference_ID','Full_Name','Passport_Name','Email','Phone','Designation','Organization','Nationality','Travel_Details_Status','Travel_Details_Last_Updated','Air_Ticket_Assistance','Ticket_Departure_City_Airport','Preferred_Departure_Home_Date','Preferred_Arrival_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Time','Ticket_Destination_City_Airport','Passport_Number','Date_of_Birth','Passport_Issue_Date','Passport_Expiry_Date','Place_Country_of_Birth','Passport_Bio_Page_Files','Travel_Details_Consent'])));
   add('Workshops',submissions.map(r=>pick(r,['Reference_ID','Full_Name','Email','Workshop_Attendance','Workshop_Selections','Future_Workshop_Updates','Workshop_Notes'])));
   add('Payments',submissions.map(r=>pick(r,['Reference_ID','Full_Name','Email','Registration_Category','Registration_Fee','Currency','Fee_Basis','Payment_Stage','Payment_Status','Transaction_Reference','Amount_Paid','Payment_Currency','Payment_Proof_Files','Gala_Dinner_Interest','Gala_Dinner_Fee','Gala_Dinner_Currency','Gala_Dinner_Payment_Reference'])));
   add('Gala Dinner',submissions.filter(r=>r.Gala_Dinner_Interest==='Yes').map(r=>pick(r,['Reference_ID','Full_Name','Email','Registration_Category','Gala_Dinner_Fee','Gala_Dinner_Currency','Gala_Dinner_Payment_Reference'])));

@@ -2,7 +2,7 @@
 
 ## Evidence baseline — 24 September 2026
 
-The implementation was reconciled against the current official NEW2AN pages, the organiser-operated CRIS page, and the files in `24.10.2026 update/`.
+The implementation was reconciled against the current official NEW2AN pages, the organiser-operated CRIS page, the files in `24.10.2026 update/`, and the organiser's travel follow-up form in `28.10.2026 update/`.
 
 Source priority for operational rules:
 
@@ -13,9 +13,17 @@ Source priority for operational rules:
 
 ## Deployment state observed — 24 September 2026
 
-- The repository contains the form/API contract version 3 implementation documented below. The append-only spreadsheet columns introduced in version 2 remain compatible.
+- The repository contains the form/API contract version 4 implementation documented below. The spreadsheet migration remains append-only and preserves earlier columns.
 - `https://pcooma.github.io/New2an/` still serves the earlier frontend (`style.css?v=3` and `app.js?v=8`) and does not yet expose the new category or separate-events workflow.
-- The configured Apps Script health endpoint currently returns `schemaVersion: 2`; the version-3 role, dietary and server-authoritative proforma response changes in this repository still require deployment.
+- The repository backend now uses `schemaVersion: 4`. The new travel/passport follow-up fields and upload workflow require an Apps Script redeployment before the page can be used live. Verify the `/exec` health response reports version 4 after deployment.
+
+## Travel and excursion follow-up
+
+`excursion.html` is a separate protected follow-up page for participants whose saved registration has `Excursion_Interest = Yes`. The participant must first load the record with the existing reference ID and registration email; the resulting two-hour edit token is required by `submitTravelDetails`.
+
+The page keeps the organiser's new Google Form as a requirements source, but deliberately removes duplicate questions. Name, email, phone, title/designation, institution, country, nationality, passport name, excursion choice and the request for travel assistance are reused from the existing registration. The follow-up opens only when the participant selected the excursion and already requested flight options. It collects only the missing flight itinerary, passport number, birth/issue/expiry details, birthplace and one PDF/image passport bio page of no more than 5 MB.
+
+Passport files are appended, never overwritten, in `01 - Participant Registration Records/<Reference ID>/Travel Documents/`. The master sheet stores the travel fields and Drive URLs, while the participant lookup response redacts those URLs and returns only an on-file marker. The admin Excel export includes a separate `Air Ticket Requests` sheet.
 - The live version-2 public settings currently return issuer, tax, telephone and bank-transfer wording that resembles simulation or placeholder data. Those values have not been accepted as genuine operational evidence and must not be used on a participant-facing invoice without organiser verification.
 
 The revised frontend and backend are therefore complete in the repository but are not yet confirmed live. Publish both layers and complete the controlled acceptance test before describing the revised process as operational.
@@ -131,10 +139,11 @@ Use controlled test records and remove or clearly identify them afterward:
 4. Sri Lankan-affiliated non-presenting attendee, no papers, LKR 40,000, LKR 15,000 gala ticket and non-presenting PayHere link.
 5. Confirm a Sri Lankan-affiliated author cannot attach two papers and a non-author cannot attach papers.
 6. Before approval, confirm that public invoice settings are blank and proforma generation/archive is blocked. Then enter evidence-checked settings, explicitly approve them, submit, reload by reference plus email, download two proforma versions, upload proof twice, sign into admin and export Excel.
-7. Confirm the Drive history is preserved, the master sheet contains the version-2 columns, the endpoint reports version 3, category/currency amounts reconcile, and 3MT is absent from the registration dataset and exports.
-8. Confirm invalid or expired edit tokens, wrong emails, cross-reference tokens, invalid PDFs and amount/currency mismatches fail safely.
-9. Confirm the retired participant roles are rejected on new submissions and migrated to `Non-author attendee` only when an old record is reloaded; verify that the three dietary choices are enforced and the excursion is described as approximate with transport and evening refreshment included and lunch excluded.
-10. On desktop and mobile, open the floating WhatsApp panel from the registration, events and admin views. Verify all ten issue routes, their recipient names and normalized `+94` numbers, the invoice/system route to Mr. Pramuditha Coomasaru, the selectable topic list, `Other` path, identifier auto-fill, plain-text preview and final `wa.me` destination without sending a production test message.
+7. Confirm the Drive history is preserved, the master sheet contains all version-4 columns, the endpoint reports version 4, category/currency amounts reconcile, and 3MT is absent from the registration dataset and exports.
+8. With a controlled registration that has `Excursion_Interest = Yes` and `Travel_Agency_Assistance = Yes — flight options`, open `excursion.html`, verify the reference/email gate, and submit the organiser-arranged path with a harmless test passport image. Confirm the sheet fields, `Travel Documents` history, `registration.json`, reload marker, and `Air Ticket Requests` export. Confirm that an excursion registration without flight assistance is told that no extra passport data is required. Remove the test identity/document according to the approved test-data procedure.
+9. Confirm invalid or expired edit tokens, wrong emails, cross-reference tokens, invalid PDFs and amount/currency mismatches fail safely.
+10. Confirm the retired participant roles are rejected on new submissions and migrated to `Non-author attendee` only when an old record is reloaded; verify that the three dietary choices are enforced and the excursion is described as approximate with transport and evening refreshment included and lunch excluded.
+11. On desktop and mobile, open the floating WhatsApp panel from the registration, events and admin views. Verify all ten issue routes, their recipient names and normalized `+94` numbers, the invoice/system route to Mr. Pramuditha Coomasaru, the selectable topic list, `Other` path, identifier auto-fill, plain-text preview and final `wa.me` destination without sending a production test message.
 
 ## Deliberately unresolved
 

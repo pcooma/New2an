@@ -54,6 +54,11 @@ const excursion = context.normaliseRegistration({...base,Excursion_Interest:'Yes
 assert.strictEqual(excursion.Excursion_Fee_Per_Person_USD,50);
 assert.strictEqual(excursion.Excursion_Total_USD,100);
 
+const validTravel={Ticket_Departure_City_Airport:'HEL',Preferred_Departure_Home_Date:'2026-12-13',Preferred_Arrival_Sri_Lanka_Date:'2026-12-14',Preferred_Departure_Sri_Lanka_Date:'2026-12-18',Preferred_Departure_Sri_Lanka_Time:'08:30',Ticket_Destination_City_Airport:'HEL',Passport_Number:'P123',Date_of_Birth:'1980-01-01',Passport_Issue_Date:'2022-01-01',Passport_Expiry_Date:'2032-01-01',Place_Country_of_Birth:'Helsinki, Finland',Travel_Details_Consent:true,Passport_Bio_Page_Base64:[{name:'passport.pdf',mimeType:'application/pdf',data:'AAAA'}]};
+assert.deepStrictEqual(Array.from(context.validateTravelDetails(context.normaliseTravelDetails(validTravel),false)),[]);
+assert(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Passport_Expiry_Date:'2021-01-01'}),false).some(x=>x.includes('expiry date')));
+assert(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Passport_Bio_Page_Base64:[]}),false).some(x=>x.includes('passport bio page')));
+
 const schemaHeaders = vm.runInContext('HEADERS.slice()',context);
 const reorderedHeaders = schemaHeaders.filter(header=>header!=='Billing_Legal_Name').concat('Billing_Legal_Name');
 const schemaSheet = {
