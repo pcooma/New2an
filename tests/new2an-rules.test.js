@@ -53,6 +53,9 @@ assert.strictEqual(context.registrationPriceFor(new Date('2026-10-31T18:00:00Z')
 const excursion = context.normaliseRegistration({...base,Excursion_Interest:'Yes',Excursion_Participant_Count:2,Excursion_Acknowledgement:true,Excursion_Participant_Names:'Guest'});
 assert.strictEqual(excursion.Excursion_Fee_Per_Person_USD,50);
 assert.strictEqual(excursion.Excursion_Total_USD,100);
+const specialEvents=context.normaliseRegistration({...base,Special_Event_Selections:'digital-transformation-ai-panel | invalid-event | innovation-workshop',Special_Event_Notes:'Please send the final schedule.'});
+assert.strictEqual(specialEvents.Special_Event_Selections,'digital-transformation-ai-panel | innovation-workshop');
+assert.strictEqual(specialEvents.Special_Event_Notes,'Please send the final schedule.');
 
 const validTravel={Ticket_Departure_City_Airport:'HEL',Preferred_Departure_Home_Date:'2026-12-13',Preferred_Arrival_Sri_Lanka_Date:'2026-12-14',Preferred_Departure_Sri_Lanka_Date:'2026-12-18',Preferred_Departure_Sri_Lanka_Time:'08:30',Ticket_Destination_City_Airport:'HEL',Passport_Number:'P123',Date_of_Birth:'1980-01-01',Passport_Issue_Date:'2022-01-01',Passport_Expiry_Date:'2032-01-01',Place_Country_of_Birth:'Helsinki, Finland',Travel_Details_Consent:true,Passport_Bio_Page_Base64:[{name:'passport.pdf',mimeType:'application/pdf',data:'AAAA'}]};
 assert.deepStrictEqual(Array.from(context.validateTravelDetails(context.normaliseTravelDetails(validTravel),false)),[]);
@@ -73,6 +76,8 @@ const schemaSheet = {
 };
 assert.doesNotThrow(()=>context.ensureSchema(schemaSheet));
 assert.deepStrictEqual(schemaSheet.headers,reorderedHeaders);
+assert(schemaHeaders.includes('Special_Event_Selections'));
+assert(schemaHeaders.includes('Special_Event_Notes'));
 
 const physicalHeaders=['Email','Reference_ID','Submission_Date','Status','Payment_Status','Payment_Proof_Files','Billing_Legal_Name','Manual_Note'];
 const storedRow=['old@example.org','NEW2AN2026-OLD1234','2026-01-01','PENDING','AWAITING_PAYMENT','','Old name','Keep this'];

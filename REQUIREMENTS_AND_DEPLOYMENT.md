@@ -11,11 +11,11 @@ Source priority for operational rules:
 3. The CRIS organiser page as corroboration of the published Sri Lankan, gala and 3MT amounts.
 4. `NEW2AN Registration Shared.xlsx` as an internal planning sheet. Conflicts in that workbook do not override corroborated organiser or public information.
 
-## Deployment state observed — 24 September 2026
+## Deployment state observed — 14 October 2026
 
-- The repository contains the form/API contract version 4 implementation documented below. The spreadsheet migration remains append-only and preserves earlier columns.
+- The repository contains the form/API contract version 5 implementation documented below. The spreadsheet migration remains append-only and preserves earlier columns.
 - `https://pcooma.github.io/New2an/` still serves the earlier frontend (`style.css?v=3` and `app.js?v=8`) and does not yet expose the new category or separate-events workflow.
-- The repository backend now uses `schemaVersion: 4`. The new travel/passport follow-up fields and upload workflow require an Apps Script redeployment before the page can be used live. Verify the `/exec` health response reports version 4 after deployment.
+- The repository backend now uses `schemaVersion: 5`. The special-event selections and the earlier travel/passport follow-up fields require an Apps Script redeployment before they can be used live. Verify the `/exec` health response reports version 5 after deployment.
 
 ## Travel and excursion follow-up
 
@@ -44,10 +44,12 @@ The official dates page now lists full-paper submission on 30 September 2026, no
 
 ## Separate activities
 
+- The 14 October 2026 coordinator message requests free interest/registration collection for three physical activities on 16 December 2026: the Digital Transformation Through AI panel, IEEE Signal Processing Society Industry Forum, and Innovation Workshop. The main registration form stores selections in `Special_Event_Selections`, stores optional notes in `Special_Event_Notes`, and the admin export includes a `Special Events` sheet.
+- The supplied IEEE SPS Sri Lanka Chapter panel flyer confirms 16 December 2026, 2:00–3:00 p.m., at SLIIT premises. The Industry Forum and Innovation Workshop time and venue remain visibly marked as awaiting organiser confirmation; no unconfirmed schedule is inferred.
 - The Global Undergraduate Hackathon is free and has an official information page, but the official page still says that the registration and competition-guideline links will be added. The registration platform links to the official page and does not invent a submission route.
 - The 3MT Competition has already launched as a separate operation. Management has excluded it from the conference registration form, backend schema, administration table, and Excel exports. The events page may identify the separate external operation and its official checkout links, but this platform does not collect or reconcile 3MT participant or payment data.
 - The organiser email, screenshot and CRIS page consistently give 3MT fees as LKR 5,000 for local scholars and USD 30 for foreign scholars. The internal workbook’s `30 EUR` entry is treated as a source discrepancy, not as the operational amount.
-- The internal workbook names an Industry Forum and Excellence Award but provides no dates, eligibility rules or registration links. These are not published in the platform until an official release supplies an actionable process.
+- The Excellence Award still lacks an actionable registration process and remains outside the platform.
 
 ## Main registration flow
 

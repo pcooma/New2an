@@ -2,7 +2,7 @@
 
 const extendedStyles = document.createElement('link');
 extendedStyles.rel = 'stylesheet';
-extendedStyles.href = 'extended.css?v=5';
+extendedStyles.href = 'extended.css?v=6';
 document.head.appendChild(extendedStyles);
 
 const CONFIG = Object.freeze({
@@ -25,6 +25,7 @@ const CONFIG = Object.freeze({
 const REGISTRATION_CATEGORIES = Object.freeze(['INT_AUTHOR','INT_NON_AUTHOR','LK_AUTHOR','LK_NON_AUTHOR']);
 const PARTICIPANT_ROLES = Object.freeze(['Author / presenting author','Non-author attendee','Industry professional']);
 const DIETARY_PREFERENCES = Object.freeze(['Vegetarian','Non-vegetarian','Halal']);
+const SPECIAL_EVENT_IDS = Object.freeze(['digital-transformation-ai-panel','ieee-sps-industry-forum','innovation-workshop']);
 const LEGACY_PARTICIPANT_ROLES = Object.freeze({'Non-author academic / researcher':'Non-author attendee','Invited or keynote speaker':'Non-author attendee','Committee member / chair':'Non-author attendee'});
 const WHATSAPP_CONTACTS = Object.freeze({
   registration:{name:'Oshadhi Gunathilake',number:'94711390292',display:'+94 71 139 0292',role:'Conference Registration'},
@@ -178,12 +179,13 @@ function updatePublicWorkshopVisibility(hasOpenWorkshops) {
   });
   const progress=document.querySelector('.progress');
   progress.innerHTML=hasOpenWorkshops
-    ? '<span class="active">1 Participant</span><span>2 Papers</span><span>3 Workshops</span><span>4 Visit</span><span>5 Excursion</span><span>6 Payment</span>'
-    : '<span class="active">1 Participant</span><span>2 Papers</span><span>3 Visit</span><span>4 Excursion</span><span>5 Payment</span>';
-  progress.style.gridTemplateColumns=`repeat(${hasOpenWorkshops?6:5},1fr)`;
-  document.querySelector('#visit-section .section-heading > span').textContent=hasOpenWorkshops?'04':'03';
-  document.querySelector('#excursion-section .section-heading > span').textContent=hasOpenWorkshops?'05':'04';
-  document.querySelector('#excursion-section + .form-section .section-heading > span').textContent=hasOpenWorkshops?'06':'05';
+    ? '<span class="active">1 Participant</span><span>2 Papers</span><span>3 Events</span><span>4 Workshops</span><span>5 Visit</span><span>6 Excursion</span><span>7 Payment</span>'
+    : '<span class="active">1 Participant</span><span>2 Papers</span><span>3 Events</span><span>4 Visit</span><span>5 Excursion</span><span>6 Payment</span>';
+  progress.style.gridTemplateColumns=`repeat(${hasOpenWorkshops?7:6},1fr)`;
+  document.querySelector('#workshop-section .section-heading > span').textContent='04';
+  document.querySelector('#visit-section .section-heading > span').textContent=hasOpenWorkshops?'05':'04';
+  document.querySelector('#excursion-section .section-heading > span').textContent=hasOpenWorkshops?'06':'05';
+  document.querySelector('#excursion-section + .form-section .section-heading > span').textContent=hasOpenWorkshops?'07':'06';
   if(hasOpenWorkshops) document.querySelector('#workshop-section .section-heading p').textContent='Select any pre-conference workshop you want to attend. Workshop registration is recorded with your conference registration.';
 }
 
@@ -305,7 +307,8 @@ function toObject(targetForm) {
     data.Billing_Address=data.Country_of_Residence||'';
     data.Purchase_Order='';data.Additional_Info='';
   }
-  data.Form_Schema_Version = 3;
+  data.Form_Schema_Version = 5;
+  data.Special_Event_Selections = Array.from(document.querySelectorAll('.special-event-choice:checked')).map(el => el.value).filter(id=>SPECIAL_EVENT_IDS.includes(id)).join(' | ');
   data.Workshop_Selections = Array.from(document.querySelectorAll('.future-workshop-choice:checked')).map(el => el.value).join(' | ');
   if (currentReferenceId) data.Reference_ID = currentReferenceId;
   return data;
@@ -402,6 +405,8 @@ function restore(data) {
   Object.entries(restoredData).filter(([key]) => /^Paper_[12]_/.test(key)).forEach(([name,value]) => { const el=form.elements.namedItem(name); if(el){if(el.type==='checkbox')el.checked=value===true||value==='true';else el.value=value;} });
   const workshopIds=String(restoredData.Workshop_Selections||'').split(' | ').filter(Boolean);
   document.querySelectorAll('.future-workshop-choice').forEach(el => {el.checked=workshopIds.includes(el.value);});
+  const specialEventIds=String(restoredData.Special_Event_Selections||'').split(' | ').filter(Boolean);
+  document.querySelectorAll('.special-event-choice').forEach(el => {el.checked=specialEventIds.includes(el.value);});
   if (restoredData.Payment_Proof_Base64 === '(uploaded — see folder)') paymentProofPreviouslyUploaded = true;
   updateAttendanceVisibility();
   updateBillingVisibility();
@@ -825,6 +830,7 @@ document.getElementById('export-btn').addEventListener('click', () => {
   add('Excursion',submissions.filter(r=>r.Excursion_Interest&&r.Excursion_Interest!=='No').map(r=>pick(r,['Reference_ID','Full_Name','Phone','Excursion_Interest','Excursion_Participant_Count','Excursion_Fee_Per_Person_USD','Excursion_Total_USD','Excursion_USD_to_EUR_Rate','Excursion_Total_EUR_Indicative','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language'])));
   add('Air Ticket Requests',submissions.filter(r=>r.Travel_Details_Status||r.Air_Ticket_Assistance).map(r=>pick(r,['Reference_ID','Full_Name','Passport_Name','Email','Phone','Designation','Organization','Nationality','Travel_Details_Status','Travel_Details_Last_Updated','Air_Ticket_Assistance','Ticket_Departure_City_Airport','Preferred_Departure_Home_Date','Preferred_Arrival_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Time','Ticket_Destination_City_Airport','Passport_Number','Date_of_Birth','Passport_Issue_Date','Passport_Expiry_Date','Place_Country_of_Birth','Passport_Bio_Page_Files','Travel_Details_Consent'])));
   add('Workshops',submissions.map(r=>pick(r,['Reference_ID','Full_Name','Email','Workshop_Attendance','Workshop_Selections','Future_Workshop_Updates','Workshop_Notes'])));
+  add('Special Events',submissions.filter(r=>r.Special_Event_Selections).map(r=>pick(r,['Reference_ID','Full_Name','Email','Phone','Organization','Special_Event_Selections','Special_Event_Notes'])));
   add('Payments',submissions.map(r=>pick(r,['Reference_ID','Full_Name','Email','Registration_Category','Registration_Fee','Currency','Fee_Basis','Payment_Stage','Payment_Status','Transaction_Reference','Amount_Paid','Payment_Currency','Payment_Proof_Files','Gala_Dinner_Interest','Gala_Dinner_Fee','Gala_Dinner_Currency','Gala_Dinner_Payment_Reference'])));
   add('Gala Dinner',submissions.filter(r=>r.Gala_Dinner_Interest==='Yes').map(r=>pick(r,['Reference_ID','Full_Name','Email','Registration_Category','Gala_Dinner_Fee','Gala_Dinner_Currency','Gala_Dinner_Payment_Reference'])));
   add('Support Requests',submissions.filter(r=>r.Support_Request||r.Support_Category).map(r=>pick(r,['Reference_ID','Full_Name','Email','Phone','Country_of_Residence','Support_Category','Support_Reply_Method','Support_Request','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance'])));

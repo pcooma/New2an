@@ -19,13 +19,14 @@ const INVOICES_FOLDER = 'Invoices';
 const PAYMENT_PROOFS_FOLDER = 'Payment Proofs';
 const TRAVEL_DOCUMENTS_FOLDER = 'Travel Documents';
 const EARLY_DEADLINE = new Date('2026-10-31T23:59:59+05:30');
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const EXCURSION_FEE_USD = 50;
 const ALLOWED_UPLOAD_MIME = ['application/pdf','image/jpeg','image/png','image/webp'];
 const REGISTRATION_CATEGORIES = ['INT_AUTHOR','INT_NON_AUTHOR','LK_AUTHOR','LK_NON_AUTHOR'];
 const PARTICIPANT_ROLES = ['Author / presenting author','Non-author attendee','Industry professional'];
 const DIETARY_PREFERENCES = ['Vegetarian','Non-vegetarian','Halal'];
+const SPECIAL_EVENT_IDS = ['digital-transformation-ai-panel','ieee-sps-industry-forum','innovation-workshop'];
 const LEGACY_PARTICIPANT_ROLES = {'Non-author academic / researcher':'Non-author attendee','Invited or keynote speaker':'Non-author attendee','Committee member / chair':'Non-author attendee'};
 const HEADERS = [
   'Submission_Date','Last_Updated','Reference_ID','Status','Payment_Status',
@@ -34,6 +35,7 @@ const HEADERS = [
   'Attendance_Mode','Paper_Count','Paper_1_ID','Paper_1_Title','Paper_1_Presenter',
   'Paper_2_ID','Paper_2_Title','Paper_2_Presenter','CMT_Changes','Registration_Fee','Currency','Fee_Basis',
   'Workshop_Attendance','Future_Workshop_Updates','Workshop_Selections','Workshop_Notes',
+  'Special_Event_Selections','Special_Event_Notes',
   'Passport_Name','Passport_Issuing_Country','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance','Room_Preference',
   'Arrival_Date','Departure_Date','Arrival_Details','Departure_Details','Dietary_Preference',
   'Venue_Transport','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone','Visit_Notes','Support_Category','Support_Reply_Method','Support_Request','Travel_Data_Consent',
@@ -138,7 +140,7 @@ function saveRegistration(input,editToken) {
 function normaliseRegistration(input) {
   const output = {};
   HEADERS.forEach(function(header) { if (Object.prototype.hasOwnProperty.call(input,header)) output[header] = input[header]; });
-  ['Title','Full_Name','Certificate_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Registration_Category','Participant_Role','Attendance_Mode','CMT_Changes','Workshop_Attendance','Future_Workshop_Updates','Workshop_Notes','Passport_Name','Passport_Issuing_Country','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance','Room_Preference','Arrival_Date','Departure_Date','Arrival_Details','Departure_Details','Venue_Transport','Dietary_Preference','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone','Visit_Notes','Support_Category','Support_Reply_Method','Support_Request','Excursion_Interest','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language','Bill_To','Billing_Legal_Name','Billing_Email','Billing_Address','Purchase_Order','Additional_Info','Gala_Dinner_Interest','Gala_Dinner_Payment_Reference','Payment_Stage','Transaction_Reference','Payment_Currency','Paper_1_ID','Paper_1_Title','Paper_2_ID','Paper_2_Title'].forEach(function(key) { output[key]=clean(output[key], key.indexOf('Notes') >= 0 || key.indexOf('Address') >= 0 || key.indexOf('Names') >= 0 || key.indexOf('Changes') >= 0 || key.indexOf('Request') >= 0 ? 2000 : 300); });
+  ['Title','Full_Name','Certificate_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Registration_Category','Participant_Role','Attendance_Mode','CMT_Changes','Workshop_Attendance','Future_Workshop_Updates','Workshop_Notes','Special_Event_Notes','Passport_Name','Passport_Issuing_Country','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance','Room_Preference','Arrival_Date','Departure_Date','Arrival_Details','Departure_Details','Venue_Transport','Dietary_Preference','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone','Visit_Notes','Support_Category','Support_Reply_Method','Support_Request','Excursion_Interest','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language','Bill_To','Billing_Legal_Name','Billing_Email','Billing_Address','Purchase_Order','Additional_Info','Gala_Dinner_Interest','Gala_Dinner_Payment_Reference','Payment_Stage','Transaction_Reference','Payment_Currency','Paper_1_ID','Paper_1_Title','Paper_2_ID','Paper_2_Title'].forEach(function(key) { output[key]=clean(output[key], key.indexOf('Notes') >= 0 || key.indexOf('Address') >= 0 || key.indexOf('Names') >= 0 || key.indexOf('Changes') >= 0 || key.indexOf('Request') >= 0 ? 2000 : 300); });
   output.Email = output.Email.toLowerCase();
   output.Billing_Email = output.Billing_Email.toLowerCase();
   output.Reference_ID = clean(input.Reference_ID,40).toUpperCase();
@@ -151,6 +153,7 @@ function normaliseRegistration(input) {
   output.Payment_Currency = output.Payment_Currency.toUpperCase();
   output.Gala_Dinner_Interest = output.Gala_Dinner_Interest || 'No';
   output.Workshop_Selections = clean(input.Workshop_Selections,2000);
+  output.Special_Event_Selections = clean(input.Special_Event_Selections,1000).split(' | ').filter(function(id){return SPECIAL_EVENT_IDS.indexOf(id)>=0;}).join(' | ');
   ['International_Eligibility_Confirmed','Travel_Data_Consent','Excursion_Acknowledgement','Policy_Agreement','Paper_1_Presenter','Paper_2_Presenter'].forEach(function(key){output[key]=input[key]===true||String(input[key]).toLowerCase()==='true';});
   return output;
 }
