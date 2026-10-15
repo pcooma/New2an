@@ -31,12 +31,17 @@ function setField(name,value){
 }
 
 function restoreTravel(data){
-  ['Email','Ticket_Departure_City_Airport','Preferred_Departure_Home_Date','Preferred_Arrival_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Time','Ticket_Destination_City_Airport','Passport_Number','Date_of_Birth','Passport_Issue_Date','Passport_Expiry_Date','Place_Country_of_Birth'].forEach(key=>setField(key,data[key]));
+  ['Email','Passport_Name','Passport_Issuing_Country','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance','Room_Preference','Arrival_Date','Departure_Date','Arrival_Details','Departure_Details','Venue_Transport','Dietary_Preference','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone','Visit_Notes','Excursion_Interest','Excursion_Participant_Count','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language','Ticket_Departure_City_Airport','Preferred_Departure_Home_Date','Preferred_Arrival_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Time','Ticket_Destination_City_Airport','Passport_Number','Date_of_Birth','Passport_Issue_Date','Passport_Expiry_Date','Place_Country_of_Birth'].forEach(key=>setField(key,data[key]));
   document.getElementById('loaded-participant').textContent=data.Full_Name||'Registered participant';
   document.getElementById('reused-identity').textContent=[data.Passport_Name||data.Full_Name,data.Nationality,data.Designation,data.Organization].filter(Boolean).join(' · ');
   passportOnFile=data.Passport_Bio_Page_Base64==='(uploaded — see folder)';
   updatePassportStatus();
+  updateFlightFields();updateExcursionFields();
 }
+
+function flightRequested(){const value=travelForm.elements.Travel_Agency_Assistance.value;return value==='Yes — flight options'||value==='Yes — flights and transfer';}
+function updateFlightFields(){const active=flightRequested(),section=document.getElementById('ticket-details');section.hidden=!active;section.querySelectorAll('input').forEach(control=>{if(control.id!=='passport-file')control.required=active;control.disabled=!active;});document.getElementById('passport-file').disabled=!active;}
+function updateExcursionFields(){const active=travelForm.elements.Excursion_Interest.value==='Yes',box=document.getElementById('travel-excursion-details');box.hidden=!active;box.querySelectorAll('input,select,textarea').forEach(control=>control.disabled=!active);}
 
 function updatePassportStatus(){
   const node=document.getElementById('passport-file-status');
@@ -53,9 +58,7 @@ document.getElementById('travel-load').addEventListener('click',async()=>{
   button.disabled=true;showMessage(loadMessage,'Checking your registration…');
   try{
     const result=await travelApi(null,`?action=getRegistration&ref=${encodeURIComponent(ref)}&email=${encodeURIComponent(email)}`);
-    if(result.data.Excursion_Interest!=='Yes')throw new Error('This follow-up is only for participants who selected Yes for the excursion. Update your main registration first.');
-    const flightRequested=result.data.Travel_Agency_Assistance==='Yes — flight options'||result.data.Travel_Agency_Assistance==='Yes — flights and transfer';
-    if(!flightRequested)throw new Error('Your registration does not request organiser flight assistance, so no additional passport or ticket details are needed.');
+    if(!['PROOF_SUBMITTED','CONFIRMED'].includes(result.data.Payment_Status))throw new Error('This follow-up opens after payment is completed and its confirmation is submitted.');
     currentReference=ref;editToken=result.editToken||'';document.getElementById('loaded-reference').textContent=ref;restoreTravel(result.data);travelForm.hidden=false;
     showMessage(loadMessage,'Registration verified. Complete or review the details below.','success');travelForm.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(error){travelForm.hidden=true;showMessage(loadMessage,error.name==='AbortError'?'The server took too long to respond. Please retry.':error.message,'error');}
@@ -72,15 +75,18 @@ document.getElementById('passport-file').addEventListener('change',event=>{
 travelForm.addEventListener('submit',async event=>{
   event.preventDefault();
   if(!travelForm.reportValidity())return;
-  if(!passportFile&&!passportOnFile){showMessage(submitMessage,'Upload the passport bio page before submitting an organiser-arranged ticket request.','error');document.getElementById('passport-file').focus();return;}
+  if(flightRequested()&&!passportFile&&!passportOnFile){showMessage(submitMessage,'Upload the passport bio page before submitting an organiser-arranged ticket request.','error');document.getElementById('passport-file').focus();return;}
   if(travelForm.elements.Passport_Expiry_Date.value&&travelForm.elements.Passport_Issue_Date.value&&travelForm.elements.Passport_Expiry_Date.value<=travelForm.elements.Passport_Issue_Date.value){showMessage(submitMessage,'Passport expiry date must be after its issue date.','error');return;}
   const button=document.getElementById('travel-submit'),data={Reference_ID:currentReference,Email:travelForm.elements.Email.value};
   new FormData(travelForm).forEach((value,key)=>{data[key]=value;});
   data.Travel_Details_Consent=travelForm.elements.Travel_Details_Consent.checked;
-  data.Passport_Bio_Page_Base64=passportFile?[await fileToPayload(passportFile)]:(passportOnFile?'(uploaded — see folder)':[]);
+  data.Passport_Bio_Page_Base64=flightRequested()?(passportFile?[await fileToPayload(passportFile)]:(passportOnFile?'(uploaded — see folder)':[])):[];
   button.disabled=true;button.textContent='Saving securely…';showMessage(submitMessage,'');
   try{
     const result=await travelApi({action:'submitTravelDetails',data,editToken});editToken=result.editToken||editToken;passportOnFile=result.passportOnFile;passportFile=null;document.getElementById('passport-file').value='';updatePassportStatus();showMessage(submitMessage,`Saved successfully against ${result.referenceId}. The organising team can now review your travel request.`,'success');
   }catch(error){showMessage(submitMessage,error.name==='AbortError'?'The server took too long to respond. Please retry; do not assume the details were saved.':error.message,'error');}
   finally{button.disabled=false;button.textContent='Save travel & excursion details';}
 });
+
+document.getElementById('travel-assistance').addEventListener('change',updateFlightFields);
+document.getElementById('travel-excursion-interest').addEventListener('change',updateExcursionFields);

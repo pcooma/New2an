@@ -17,16 +17,17 @@ const SHEET_TAB_NAME = 'Registrations';
 const RECORDS_FOLDER = '01 - Participant Registration Records';
 const INVOICES_FOLDER = 'Invoices';
 const PAYMENT_PROOFS_FOLDER = 'Payment Proofs';
+const GALA_PAYMENT_PROOFS_FOLDER = 'Gala Dinner Payment Proofs';
 const TRAVEL_DOCUMENTS_FOLDER = 'Travel Documents';
 const EARLY_DEADLINE = new Date('2026-10-31T23:59:59+05:30');
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const EXCURSION_FEE_USD = 50;
 const ALLOWED_UPLOAD_MIME = ['application/pdf','image/jpeg','image/png','image/webp'];
 const REGISTRATION_CATEGORIES = ['INT_AUTHOR','INT_NON_AUTHOR','LK_AUTHOR','LK_NON_AUTHOR'];
 const PARTICIPANT_ROLES = ['Author / presenting author','Non-author attendee','Industry professional'];
 const DIETARY_PREFERENCES = ['Vegetarian','Non-vegetarian','Halal'];
-const SPECIAL_EVENT_IDS = ['digital-transformation-ai-panel','ieee-sps-industry-forum','innovation-workshop'];
+const SPECIAL_EVENT_IDS = ['digital-transformation-ai-panel','ieee-comsoc-workshop','ieee-sps-industry-forum','innovation-workshop','global-undergraduate-hackathon'];
 const LEGACY_PARTICIPANT_ROLES = {'Non-author academic / researcher':'Non-author attendee','Invited or keynote speaker':'Non-author attendee','Committee member / chair':'Non-author attendee'};
 const HEADERS = [
   'Submission_Date','Last_Updated','Reference_ID','Status','Payment_Status',
@@ -42,12 +43,12 @@ const HEADERS = [
   'Excursion_Interest','Excursion_Participant_Count','Excursion_Participant_Names','Excursion_Group_Details',
   'Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language','Excursion_Acknowledgement',
   'Bill_To','Billing_Legal_Name','Billing_Email','Billing_Address','Purchase_Order','Additional_Info',
-  'Gala_Dinner_Interest','Gala_Dinner_Fee','Gala_Dinner_Currency','Gala_Dinner_Payment_Reference',
+  'Gala_Dinner_Interest','Gala_Dinner_Fee','Gala_Dinner_Currency','Gala_Dinner_Payment_Reference','Gala_Dinner_Payment_Proof_Files',
   'Payment_Stage','Transaction_Reference','Amount_Paid','Payment_Currency','Payment_Proof_Files',
   'Policy_Agreement','Form_Schema_Version',
   'Record_File_URL','Excursion_Fee_Per_Person_USD','Excursion_Total_USD',
   'Excursion_USD_to_EUR_Rate','Excursion_Total_EUR_Indicative',
-  'Travel_Details_Status','Travel_Details_Last_Updated','Air_Ticket_Assistance',
+  'Travel_Details_Status','Travel_Details_Last_Updated','Travel_Email_Sent_At','Air_Ticket_Assistance',
   'Ticket_Departure_City_Airport','Preferred_Departure_Home_Date','Preferred_Arrival_Sri_Lanka_Date',
   'Preferred_Departure_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Time','Ticket_Destination_City_Airport',
   'Passport_Number','Date_of_Birth','Passport_Issue_Date',
@@ -85,7 +86,6 @@ function saveRegistration(input,editToken) {
   const errors = validateRegistration(data);
   if (errors.length) return json({success:false,error:errors.join(' ')});
   const publicSettings = readPublicSettings();
-  if(data.Excursion_Interest === 'Yes' && !(publicSettings.usdToEurRate>0))return json({success:false,error:'The excursion conversion rate has not been configured. Please contact the organiser before registering for the excursion.'});
   const resources = getResources();
   const sheet = resources.sheet;
   const now = new Date();
@@ -101,13 +101,17 @@ function saveRegistration(input,editToken) {
   if (proofUrls.length) data.Payment_Proof_Files = [existing.paymentProofFiles].concat(proofUrls).filter(Boolean).join('\n');
   else if (data.Payment_Proof_Base64 === '(uploaded — see folder)') data.Payment_Proof_Files = existing.paymentProofFiles || '(retained)';
   delete data.Payment_Proof_Base64;
+  const galaProofUrls=saveProofFiles(registrationFolder,GALA_PAYMENT_PROOFS_FOLDER,'gala_payment_proof',data.Gala_Dinner_Payment_Proof_Base64);
+  if(galaProofUrls.length)data.Gala_Dinner_Payment_Proof_Files=[existing.galaPaymentProofFiles].concat(galaProofUrls).filter(Boolean).join('\n');
+  else if(data.Gala_Dinner_Payment_Proof_Base64==='(uploaded — see folder)')data.Gala_Dinner_Payment_Proof_Files=existing.galaPaymentProofFiles||'(retained)';
+  delete data.Gala_Dinner_Payment_Proof_Base64;
   data.Registration_Fee = price.amount;
   data.Status = existing.status || 'PENDING_PAYMENT_CONFIRMATION';
-  const paymentMismatch = Math.abs(data.Amount_Paid-price.amount)>0.009 || data.Payment_Currency!==price.currency;
-  data.Payment_Status = existing.paymentStatus === 'CONFIRMED' ? 'CONFIRMED' : (data.Payment_Stage === 'NOT_PAID' ? 'AWAITING_PAYMENT' : (paymentMismatch?'PROOF_SUBMITTED_AMOUNT_MISMATCH':'PROOF_SUBMITTED'));
+  data.Payment_Status = existing.paymentStatus === 'CONFIRMED' ? 'CONFIRMED' : (data.Payment_Stage === 'NOT_PAID' ? 'AWAITING_PAYMENT' : 'PROOF_SUBMITTED');
   data.Currency = price.currency;
   data.Fee_Basis = price.feeBasis;
   data.Payment_Currency = price.currency;
+  data.Amount_Paid=data.Payment_Stage==='COMPLETED'?price.amount:0;
   data.Gala_Dinner_Fee = data.Gala_Dinner_Interest === 'Yes' ? (data.Registration_Category==='LK_AUTHOR'?12000:15000) : 0;
   data.Gala_Dinner_Currency = data.Gala_Dinner_Interest === 'Yes' ? 'LKR' : '';
   data.Excursion_Fee_Per_Person_USD = EXCURSION_FEE_USD;
@@ -117,6 +121,10 @@ function saveRegistration(input,editToken) {
   data.Form_Schema_Version = SCHEMA_VERSION;
   data.Record_File_URL = saveRecordFile(registrationFolder, data);
   writeSheetRecord(sheet,data,existing.rowNumber);
+  if(data.Payment_Stage==='COMPLETED'&&existing.paymentStatus!=='PROOF_SUBMITTED'&&existing.paymentStatus!=='CONFIRMED'){
+    data.Travel_Email_Sent_At=sendTravelFollowUpEmail(data);
+    if(data.Travel_Email_Sent_At)writeSheetRecord(sheet,{Travel_Email_Sent_At:data.Travel_Email_Sent_At},existing.rowNumber||sheet.getLastRow());
+  }
   return json({
     success:true,
     referenceId:referenceId,
@@ -150,8 +158,11 @@ function normaliseRegistration(input) {
   output.Excursion_Total_USD = output.Excursion_Interest === 'Yes' ? EXCURSION_FEE_USD * output.Excursion_Participant_Count : 0;
   output.Amount_Paid = Number(input.Amount_Paid || 0);
   output.Payment_Proof_Base64 = input.Payment_Proof_Base64;
+  output.Gala_Dinner_Payment_Proof_Base64=input.Gala_Dinner_Payment_Proof_Base64;
   output.Payment_Currency = output.Payment_Currency.toUpperCase();
   output.Gala_Dinner_Interest = output.Gala_Dinner_Interest || 'No';
+  output.Payment_Stage=['PAID_GATEWAY','PAID_TRANSFER','PAID_OTHER'].indexOf(output.Payment_Stage)>=0?'COMPLETED':output.Payment_Stage;
+  output.Participant_Role=output.Registration_Category==='INT_AUTHOR'||output.Registration_Category==='LK_AUTHOR'?'Author / presenting author':'Non-author attendee';
   output.Workshop_Selections = clean(input.Workshop_Selections,2000);
   output.Special_Event_Selections = clean(input.Special_Event_Selections,1000).split(' | ').filter(function(id){return SPECIAL_EVENT_IDS.indexOf(id)>=0;}).join(' | ');
   ['International_Eligibility_Confirmed','Travel_Data_Consent','Excursion_Acknowledgement','Policy_Agreement','Paper_1_Presenter','Paper_2_Presenter'].forEach(function(key){output[key]=input[key]===true||String(input[key]).toLowerCase()==='true';});
@@ -160,41 +171,28 @@ function normaliseRegistration(input) {
 
 function validateRegistration(d) {
   const errors=[];
-  ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Registration_Category','Participant_Role','Attendance_Mode','Bill_To','Payment_Stage'].forEach(function(k){if(!d[k])errors.push(k.replace(/_/g,' ')+' is required.');});
+  ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Registration_Category','Attendance_Mode','Bill_To','Payment_Stage'].forEach(function(k){if(!d[k])errors.push(k.replace(/_/g,' ')+' is required.');});
   if(d.Bill_To==='Institution / organisation')['Billing_Legal_Name','Billing_Email','Billing_Address'].forEach(function(k){if(!d[k])errors.push(k.replace(/_/g,' ')+' is required for an institutional invoice.');});
-  if(d.Attendance_Mode==='In person in Colombo'&&(!d.Emergency_Contact_Name||!d.Emergency_Contact_Phone))errors.push('Emergency contact name and phone are required for in-person participants.');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.Email)) errors.push('A valid email is required.');
   const authorCategory=d.Registration_Category==='INT_AUTHOR'||d.Registration_Category==='LK_AUTHOR';
   if(REGISTRATION_CATEGORIES.indexOf(d.Registration_Category)<0)errors.push('Select a valid registration category.');
-  if(PARTICIPANT_ROLES.indexOf(d.Participant_Role)<0)errors.push('Select a valid participant role.');
-  if(authorCategory&&d.Participant_Role!=='Author / presenting author')errors.push('Author registration categories require the presenting-author role.');
-  if(!authorCategory&&d.Participant_Role==='Author / presenting author')errors.push('Presenting authors require an author registration category.');
   if(authorCategory&&d.Paper_Count<1)errors.push('A presenting author must provide an accepted paper.');
   if(!authorCategory&&d.Paper_Count)errors.push('Accepted papers require an author registration category.');
   if(d.Registration_Category==='LK_AUTHOR'&&d.Paper_Count>1)errors.push('Each Sri Lankan-affiliated author registration covers one accepted paper.');
   if(d.Attendance_Mode==='Request online presentation (international author; approval required)'&&d.Registration_Category!=='INT_AUTHOR')errors.push('Online presentation may be requested only by an international author.');
   if(authorCategory&&d.Attendance_Mode==='Online session access (non-presenting)')errors.push('An author cannot use non-presenting online access to satisfy the paper-presentation requirement.');
   for (let i=1;i<=d.Paper_Count;i++){if(!d['Paper_'+i+'_ID']||!d['Paper_'+i+'_Title']||!d['Paper_'+i+'_Presenter'])errors.push('Paper '+i+' requires its CMT ID, title and presenter confirmation.');}
-  const help=/^Yes/.test(d.Travel_Agency_Assistance)||/^Yes/.test(d.Accommodation_Assistance);
-  if(help&&!d.Travel_Data_Consent)errors.push('Travel data consent is required for coordination requests.');
-  if(d.Arrival_Date&&d.Departure_Date&&d.Departure_Date<d.Arrival_Date)errors.push('Departure cannot be before arrival.');
-  if(/^Yes/.test(d.Visa_Support)&&(!d.Passport_Name||!d.Passport_Issuing_Country))errors.push('Passport name and issuing country are required for visa support.');
-  if(d.Dietary_Preference&&DIETARY_PREFERENCES.indexOf(d.Dietary_Preference)<0)errors.push('Select Vegetarian, Non-vegetarian or Halal as the dietary preference.');
-  if(d.Attendance_Mode==='In person in Colombo'&&d.Excursion_Interest === 'Yes'){
-    if(!Number.isInteger(d.Excursion_Participant_Count)||d.Excursion_Participant_Count<1||d.Excursion_Participant_Count>10)errors.push('Excursion participant count must be from 1 to 10.');
-    if(d.Excursion_Participant_Count>1&&!d.Excursion_Participant_Names)errors.push('List accompanying excursion participants.');
-    if(!d.Excursion_Acknowledgement)errors.push('Excursion acknowledgement is required.');
-  }
   const paid=d.Payment_Stage!=='NOT_PAID';
-  if(['NOT_PAID','PAID_GATEWAY','PAID_TRANSFER','PAID_OTHER'].indexOf(d.Payment_Stage)<0)errors.push('Select a valid payment stage.');
+  if(['NOT_PAID','COMPLETED'].indexOf(d.Payment_Stage)<0)errors.push('Select a valid payment stage.');
   const proofs=Array.isArray(d.Payment_Proof_Base64)?d.Payment_Proof_Base64:[];
   if(paid&&!d.Transaction_Reference)errors.push('Payment reference is required after payment.');
-  if(paid&&!(d.Amount_Paid>0))errors.push('Amount paid is required after payment.');
-  const expectedCurrency=d.Registration_Category.indexOf('LK_')===0?'LKR':'EUR';
-  if(paid&&d.Payment_Currency!==expectedCurrency)errors.push('Payment currency does not match the selected registration category.');
   if(paid&&!proofs.length&&d.Payment_Proof_Base64!=='(uploaded — see folder)')errors.push('Proof of payment is required after payment.');
   proofs.forEach(function(file){const issue=validateUpload(file);if(issue)errors.push(issue);});
   if(d.Gala_Dinner_Interest==='Yes'&&d.Registration_Category.indexOf('LK_')!==0)errors.push('Published gala dinner tickets are available only for Sri Lankan-affiliated categories.');
+  const galaProofs=Array.isArray(d.Gala_Dinner_Payment_Proof_Base64)?d.Gala_Dinner_Payment_Proof_Base64:[];
+  if(paid&&d.Gala_Dinner_Interest==='Yes'&&!d.Gala_Dinner_Payment_Reference)errors.push('Gala dinner payment reference is required after payment.');
+  if(paid&&d.Gala_Dinner_Interest==='Yes'&&!galaProofs.length&&d.Gala_Dinner_Payment_Proof_Base64!=='(uploaded — see folder)')errors.push('Separate gala dinner payment proof is required.');
+  galaProofs.forEach(function(file){const issue=validateUpload(file);if(issue)errors.push(issue);});
   if(!d.Policy_Agreement)errors.push('Policy agreement is required.');
   if(d.Reference_ID&&!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(d.Reference_ID))errors.push('Invalid reference ID.');
   return errors;
@@ -205,7 +203,7 @@ function getRegistration(params) {
   if(!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(ref)||!email)return json({success:false,error:'Reference ID and email are required.'});
   const sheet=getResources().sheet, values=sheet.getDataRange().getValues();
   const headers=values[0]||[],map=headerMap(headers),refIndex=map.Reference_ID,emailIndex=map.Email;
-  for(let r=1;r<values.length;r++)if(String(values[r][refIndex])===ref&&String(values[r][emailIndex]).toLowerCase()===email){const out=rowToObject(headers,values[r]);out.Participant_Role=LEGACY_PARTICIPANT_ROLES[out.Participant_Role]||out.Participant_Role;if(!out.Registration_Category)out.Registration_Category=out.Participant_Role==='Author / presenting author'?'INT_AUTHOR':'INT_NON_AUTHOR';const hasProof=!!out.Payment_Proof_Files,hasPassport=!!out.Passport_Bio_Page_Files;delete out.Payment_Proof_Files;delete out.Passport_Bio_Page_Files;delete out.Record_File_URL;if(hasProof)out.Payment_Proof_Base64='(uploaded — see folder)';if(hasPassport)out.Passport_Bio_Page_Base64='(uploaded — see folder)';return json({success:true,data:out,editToken:issueEditToken(ref,email)});}
+  for(let r=1;r<values.length;r++)if(String(values[r][refIndex])===ref&&String(values[r][emailIndex]).toLowerCase()===email){const out=rowToObject(headers,values[r]);out.Participant_Role=LEGACY_PARTICIPANT_ROLES[out.Participant_Role]||out.Participant_Role;if(!out.Registration_Category)out.Registration_Category=out.Participant_Role==='Author / presenting author'?'INT_AUTHOR':'INT_NON_AUTHOR';const hasProof=!!out.Payment_Proof_Files,hasGalaProof=!!out.Gala_Dinner_Payment_Proof_Files,hasPassport=!!out.Passport_Bio_Page_Files;delete out.Payment_Proof_Files;delete out.Gala_Dinner_Payment_Proof_Files;delete out.Passport_Bio_Page_Files;delete out.Record_File_URL;if(hasProof)out.Payment_Proof_Base64='(uploaded — see folder)';if(hasGalaProof)out.Gala_Dinner_Payment_Proof_Base64='(uploaded — see folder)';if(hasPassport)out.Passport_Bio_Page_Base64='(uploaded — see folder)';return json({success:true,data:out,editToken:issueEditToken(ref,email)});}
   return json({success:false,error:'No matching registration was found.'});
 }
 
@@ -215,16 +213,15 @@ function saveTravelDetails(input,editToken) {
   const resources=getResources(),existing=findRow(resources.sheet,referenceId,'');
   if(!existing.rowNumber||existing.email.toLowerCase()!==email||!verifyEditToken(editToken,referenceId,email))return json({success:false,error:'Reload the registration with its reference and email before saving travel details.'});
   const values=resources.sheet.getDataRange().getValues(),headers=values[0]||[],stored=rowToObject(headers,values[existing.rowNumber-1]);
-  if(stored.Excursion_Interest!=='Yes')return json({success:false,error:'This follow-up form is available only to participants whose registration says Yes to the excursion. Update the main registration first if needed.'});
-  const flightRequested=stored.Travel_Agency_Assistance==='Yes — flight options'||stored.Travel_Agency_Assistance==='Yes — flights and transfer';
-  if(!flightRequested)return json({success:false,error:'Your registration does not request organiser flight assistance. No additional passport or ticket details are required.'});
+  if(['PROOF_SUBMITTED','CONFIRMED'].indexOf(String(stored.Payment_Status))<0)return json({success:false,error:'Post-registration travel details are available after payment confirmation has been submitted.'});
   const data=normaliseTravelDetails(input),errors=validateTravelDetails(data,!!stored.Passport_Bio_Page_Files);
   if(errors.length)return json({success:false,error:errors.join(' ')});
   const registrationFolder=getRegistrationFolder(resources.recordsFolder,referenceId);
   const passportUrls=saveTravelDocuments(registrationFolder,data.Passport_Bio_Page_Base64);
   data.Passport_Bio_Page_Files=passportUrls.length?[stored.Passport_Bio_Page_Files].concat(passportUrls).filter(Boolean).join('\n'):(stored.Passport_Bio_Page_Files||'');
   delete data.Passport_Bio_Page_Base64;
-  data.Reference_ID=referenceId;data.Email=email;data.Air_Ticket_Assistance='Yes';data.Travel_Details_Status='SUBMITTED';data.Travel_Details_Last_Updated=new Date().toISOString();
+  data.Reference_ID=referenceId;data.Email=email;data.Air_Ticket_Assistance=/flight/.test(data.Travel_Agency_Assistance)?'Yes':'No';data.Travel_Details_Status='SUBMITTED';data.Travel_Details_Last_Updated=new Date().toISOString();
+  data.Excursion_Fee_Per_Person_USD=EXCURSION_FEE_USD;data.Excursion_Total_USD=data.Excursion_Interest==='Yes'?EXCURSION_FEE_USD*data.Excursion_Participant_Count:0;
   const merged=Object.assign({},stored,data);
   merged.Record_File_URL=saveRecordFile(registrationFolder,merged);data.Record_File_URL=merged.Record_File_URL;
   writeSheetRecord(resources.sheet,data,existing.rowNumber);
@@ -233,7 +230,8 @@ function saveTravelDetails(input,editToken) {
 
 function normaliseTravelDetails(input){
   const output={};
-  ['Ticket_Departure_City_Airport','Preferred_Departure_Home_Date','Preferred_Arrival_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Time','Ticket_Destination_City_Airport','Passport_Number','Date_of_Birth','Passport_Issue_Date','Passport_Expiry_Date','Place_Country_of_Birth'].forEach(function(key){output[key]=clean(input[key],300);});
+  ['Passport_Name','Passport_Issuing_Country','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance','Room_Preference','Arrival_Date','Departure_Date','Arrival_Details','Departure_Details','Venue_Transport','Dietary_Preference','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone','Visit_Notes','Excursion_Interest','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language','Ticket_Departure_City_Airport','Preferred_Departure_Home_Date','Preferred_Arrival_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Time','Ticket_Destination_City_Airport','Passport_Number','Date_of_Birth','Passport_Issue_Date','Passport_Expiry_Date','Place_Country_of_Birth'].forEach(function(key){output[key]=clean(input[key],key.indexOf('Notes')>=0||key.indexOf('Names')>=0?2000:300);});
+  output.Excursion_Participant_Count=Math.max(0,Math.min(10,parseInt(input.Excursion_Participant_Count,10)||0));
   output.Travel_Details_Consent=input.Travel_Details_Consent===true||String(input.Travel_Details_Consent).toLowerCase()==='true';
   output.Passport_Bio_Page_Base64=input.Passport_Bio_Page_Base64;
   return output;
@@ -242,7 +240,13 @@ function normaliseTravelDetails(input){
 function validateTravelDetails(d,hasPassportOnFile){
   const errors=[];
   if(!d.Travel_Details_Consent)errors.push('Consent is required before sensitive travel details can be stored.');
-  {
+  if(d.Arrival_Date&&d.Departure_Date&&d.Departure_Date<d.Arrival_Date)errors.push('Departure cannot be before arrival.');
+  if(/^Yes/.test(d.Visa_Support)&&(!d.Passport_Name||!d.Passport_Issuing_Country))errors.push('Passport name and issuing country are required for visa support.');
+  if(d.Dietary_Preference&&DIETARY_PREFERENCES.indexOf(d.Dietary_Preference)<0)errors.push('Select a valid dietary preference.');
+  if(d.Excursion_Interest==='Yes'&&(d.Excursion_Participant_Count<1||d.Excursion_Participant_Count>10))errors.push('Excursion participant count must be from 1 to 10.');
+  if(d.Excursion_Interest==='Yes'&&d.Excursion_Participant_Count>1&&!d.Excursion_Participant_Names)errors.push('List accompanying excursion participants.');
+  const flightRequested=d.Travel_Agency_Assistance==='Yes — flight options'||d.Travel_Agency_Assistance==='Yes — flights and transfer';
+  if(flightRequested){
     ['Ticket_Departure_City_Airport','Preferred_Departure_Home_Date','Preferred_Arrival_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Date','Preferred_Departure_Sri_Lanka_Time','Ticket_Destination_City_Airport','Passport_Number','Date_of_Birth','Passport_Issue_Date','Passport_Expiry_Date','Place_Country_of_Birth'].forEach(function(key){if(!d[key])errors.push(key.replace(/_/g,' ')+' is required for organiser-arranged air travel.');});
     if(d.Preferred_Arrival_Sri_Lanka_Date&&d.Preferred_Departure_Sri_Lanka_Date&&d.Preferred_Departure_Sri_Lanka_Date<d.Preferred_Arrival_Sri_Lanka_Date)errors.push('Departure from Sri Lanka cannot be before arrival in Sri Lanka.');
     if(d.Passport_Issue_Date&&d.Passport_Expiry_Date&&d.Passport_Expiry_Date<=d.Passport_Issue_Date)errors.push('Passport expiry date must be after its issue date.');
@@ -366,8 +370,8 @@ function ensureSchema(sheet) {
 
 function findRow(sheet, ref, email) {
   const values=sheet.getDataRange().getValues();
-  const headers=values[0]||[],map=headerMap(headers),refIndex=map.Reference_ID,emailIndex=map.Email,proofIndex=map.Payment_Proof_Files;
-  for(let r=1;r<values.length;r++)if((ref&&String(values[r][refIndex])===ref)||(!ref&&String(values[r][emailIndex]).toLowerCase()===String(email).toLowerCase())){const item=rowToObject(headers,values[r]);return{rowNumber:r+1,referenceId:String(values[r][refIndex]),email:String(values[r][emailIndex]),submissionDate:item.Submission_Date,status:item.Status,paymentStatus:item.Payment_Status,paymentProofFiles:values[r][proofIndex]};}
+  const headers=values[0]||[],map=headerMap(headers),refIndex=map.Reference_ID,emailIndex=map.Email,proofIndex=map.Payment_Proof_Files,galaProofIndex=map.Gala_Dinner_Payment_Proof_Files;
+  for(let r=1;r<values.length;r++)if((ref&&String(values[r][refIndex])===ref)||(!ref&&String(values[r][emailIndex]).toLowerCase()===String(email).toLowerCase())){const item=rowToObject(headers,values[r]);return{rowNumber:r+1,referenceId:String(values[r][refIndex]),email:String(values[r][emailIndex]),submissionDate:item.Submission_Date,status:item.Status,paymentStatus:item.Payment_Status,paymentProofFiles:values[r][proofIndex],galaPaymentProofFiles:galaProofIndex==null?'':values[r][galaProofIndex]};}
   return {};
 }
 
@@ -400,6 +404,7 @@ function getRegistrationFolder(recordsFolder,referenceId){
   const folder=named.hasNext()?named.next():recordsFolder.createFolder(referenceId);
   getOrCreateSubfolder(folder,INVOICES_FOLDER);
   getOrCreateSubfolder(folder,PAYMENT_PROOFS_FOLDER);
+  getOrCreateSubfolder(folder,GALA_PAYMENT_PROOFS_FOLDER);
   return folder;
 }
 
@@ -425,21 +430,26 @@ function saveInvoiceVersion(body){
   const registrationFolder=getRegistrationFolder(resources.recordsFolder,referenceId);
   const invoiceFolder=getOrCreateSubfolder(registrationFolder,INVOICES_FOLDER);
   const stamp=Utilities.formatDate(new Date(),Session.getScriptTimeZone()||'Asia/Colombo','yyyyMMdd_HHmmss_SSS');
-  const name='NEW2AN2026_Proforma_'+referenceId+'_'+stamp+'_'+Utilities.getUuid().slice(0,8)+'.pdf';
+  const kind=body.invoiceKind==='gala'?'Gala_Dinner_Invoice':'Registration_Invoice';
+  const name='NEW2AN2026_'+kind+'_'+referenceId+'_'+stamp+'_'+Utilities.getUuid().slice(0,8)+'.pdf';
   const saved=invoiceFolder.createFile(Utilities.newBlob(decoded,'application/pdf',name));
   cache.put(rateKey,String(archiveCount+1),3600);
   return json({success:true,referenceId:referenceId,fileName:saved.getName(),fileUrl:saved.getUrl(),registrationFolderUrl:registrationFolder.getUrl()});
 }
 
 function savePaymentProofs(registrationFolder,uploads){
+  return saveProofFiles(registrationFolder,PAYMENT_PROOFS_FOLDER,'payment_proof',uploads);
+}
+
+function saveProofFiles(registrationFolder,folderName,prefix,uploads){
   if(!Array.isArray(uploads)||!uploads.length)return [];
-  const folder=getOrCreateSubfolder(registrationFolder,PAYMENT_PROOFS_FOLDER);
+  const folder=getOrCreateSubfolder(registrationFolder,folderName);
   const created=[];
   try {
     uploads.forEach(function(file,index){
       const safeName=clean(file.name,120).replace(/[^A-Za-z0-9._-]/g,'_')||('proof_'+(index+1));
       const stamp=Utilities.formatDate(new Date(),Session.getScriptTimeZone()||'Asia/Colombo','yyyyMMdd_HHmmss_SSS');
-      const blob=Utilities.newBlob(Utilities.base64Decode(file.data),file.mimeType,'payment_proof_'+stamp+'_'+(index+1)+'_'+Utilities.getUuid().slice(0,8)+'_'+safeName);
+      const blob=Utilities.newBlob(Utilities.base64Decode(file.data),file.mimeType,prefix+'_'+stamp+'_'+(index+1)+'_'+Utilities.getUuid().slice(0,8)+'_'+safeName);
       created.push(folder.createFile(blob));
     });
     return created.map(function(file){return file.getUrl();});
@@ -447,6 +457,14 @@ function savePaymentProofs(registrationFolder,uploads){
     created.forEach(function(file){try{file.setTrashed(true);}catch(_){}});
     throw error;
   }
+}
+
+function sendTravelFollowUpEmail(data){
+  try{
+    const url='https://pcooma.github.io/New2an/excursion.html';
+    MailApp.sendEmail({to:data.Email,subject:'NEW2AN 2026 — complete your travel details',body:'Hello '+data.Full_Name+',\n\nWe received your payment confirmation for NEW2AN 2026. When your travel plans are ready, use the secure follow-up form below and enter your registration reference '+data.Reference_ID+'.\n\n'+url+'\n\nTravel and excursion details will be added to your existing registration record.\n\nNEW2AN 2026 Organising Team'});
+    return new Date().toISOString();
+  }catch(error){Logger.log('Travel follow-up email failed: '+safeError(error));return '';}
 }
 
 function validateTravelUpload(file){

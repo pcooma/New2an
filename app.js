@@ -2,7 +2,7 @@
 
 const extendedStyles = document.createElement('link');
 extendedStyles.rel = 'stylesheet';
-extendedStyles.href = 'extended.css?v=6';
+extendedStyles.href = 'extended.css?v=7';
 document.head.appendChild(extendedStyles);
 
 const CONFIG = Object.freeze({
@@ -13,6 +13,7 @@ const CONFIG = Object.freeze({
   sriLankanEarlyFee: 40000,
   sriLankanLateFee: 50000,
   excursionFeeUsd: 50,
+  crisPaymentUrl: 'https://crisglobal.org/#new2an',
   paymentLinks: Object.freeze({
     LK_AUTHOR: 'https://payhere.lk/pay/ob0887ec5',
     LK_NON_AUTHOR: 'https://payhere.lk/pay/oc78f4e53',
@@ -23,9 +24,8 @@ const CONFIG = Object.freeze({
   tokenKey: 'new2an2026_admin_token'
 });
 const REGISTRATION_CATEGORIES = Object.freeze(['INT_AUTHOR','INT_NON_AUTHOR','LK_AUTHOR','LK_NON_AUTHOR']);
-const PARTICIPANT_ROLES = Object.freeze(['Author / presenting author','Non-author attendee','Industry professional']);
 const DIETARY_PREFERENCES = Object.freeze(['Vegetarian','Non-vegetarian','Halal']);
-const SPECIAL_EVENT_IDS = Object.freeze(['digital-transformation-ai-panel','ieee-sps-industry-forum','innovation-workshop']);
+const SPECIAL_EVENT_IDS = Object.freeze(['digital-transformation-ai-panel','ieee-comsoc-workshop','ieee-sps-industry-forum','innovation-workshop','global-undergraduate-hackathon']);
 const LEGACY_PARTICIPANT_ROLES = Object.freeze({'Non-author academic / researcher':'Non-author attendee','Invited or keynote speaker':'Non-author attendee','Committee member / chair':'Non-author attendee'});
 const WHATSAPP_CONTACTS = Object.freeze({
   registration:{name:'Oshadhi Gunathilake',number:'94711390292',display:'+94 71 139 0292',role:'Conference Registration'},
@@ -56,7 +56,6 @@ const form = document.getElementById('registration-form');
 const message = document.getElementById('form-message');
 const paperCount = document.getElementById('paper-count');
 const papers = document.getElementById('papers');
-const role = document.getElementById('participant-role');
 const registrationCategory = document.getElementById('registration-category');
 let submissions = [];
 let adminToken = sessionStorage.getItem(CONFIG.tokenKey) || '';
@@ -64,6 +63,8 @@ let currentReferenceId = '';
 let editToken = '';
 let paymentProofFiles = [];
 let paymentProofPreviouslyUploaded = false;
+let galaProofFile = null;
+let galaProofPreviouslyUploaded = false;
 let workshopSettings = [
   {id:'seeing-through-ai-2026',title:'Seeing Through AI: Deep Learning for Computer Vision',date:'2026-07-21',time:'09:30–12:30',venue:'G906, New Building',fee:0,currency:'EUR',status:'completed',contact:'Mr. Amila Karunanayake, +94 77 443 9069'},
   {id:'ai-communications-6g-2026',title:'AI-Based Communications Towards 6G',date:'2026-09-11',time:'11:00 onwards',venue:'SLIIT, Malabe',fee:0,currency:'LKR',status:'completed',contact:'Prof. Dushantha Jayakody, +94 71 402 9161'}
@@ -97,7 +98,7 @@ function clarifyParticipantCopy() {
   const setPlaceholder = (name, text) => { const control=form.elements.namedItem(name); if(control) control.placeholder=text; };
   document.querySelector('.intro .eyebrow').textContent = 'Conference registration';
   document.querySelector('.intro h2').textContent = 'Register for NEW2AN 2026';
-  document.querySelector('.intro>div>p:last-child').textContent = 'Use this form for the main conference. Choose the published category that matches your affiliation. Travel, hotel, visa and excursion requests are not confirmed bookings; separate activities remain outside this registration record.';
+  document.querySelector('.intro>div>p:last-child').textContent = 'Use this shorter form for conference registration, papers, active events, billing and payment. Travel and excursion details are completed later from the post-registration tab.';
   document.querySelector('.lookup-card strong').textContent = 'Returning to your registration?';
   document.querySelector('.lookup-card span').textContent = 'Enter the reference ID issued by this form and the same email address you used previously.';
   setLabel('Full_Name','Full name as entered in your paper-submission record');
@@ -148,7 +149,7 @@ function clarifyParticipantCopy() {
   setLabel('Excursion_Mobility_Needs','Mobility or accessibility assistance needed during the excursion');
   setLabel('Excursion_Dietary_Needs','Evening-refreshment allergies or dietary requirements');
   setLabel('Excursion_Guide_Language','Preferred language for the excursion guide');
-  setLabel('Bill_To','Who should the pre-payment invoice be addressed to?');
+  setLabel('Bill_To','Who should the payment invoice be addressed to?');
   setLabel('Billing_Legal_Name','Exact legal name to print under Bill to');
   setLabel('Billing_Email','Email address for the invoice or finance office');
   setLabel('Billing_Address','Address to show on the invoice');
@@ -156,12 +157,11 @@ function clarifyParticipantCopy() {
   setLabel('Additional_Info','Other billing information');
   setLabel('Payment_Stage','Current payment status');
   setLabel('Transaction_Reference','Bank or online payment reference');
-  setLabel('Amount_Paid','Amount you paid');
-  setLabel('Payment_Currency','Registration payment currency');
-  document.querySelector('.proforma-box strong').textContent = 'Pre-payment invoice (proforma invoice)';
-  document.getElementById('proforma-btn').textContent = 'Download pre-payment invoice PDF';
-  document.getElementById('submit-btn').textContent = 'Send registration details';
-  document.querySelector('#visit-section .section-heading p').textContent = 'Tell us what assistance you may need. These answers are planning requests only and do not confirm flights, airport transfers, hotels or visa approval.';
+  document.querySelector('.proforma-box strong').textContent = 'Payment invoice';
+  document.getElementById('proforma-btn').textContent = 'Download payment invoice';
+  document.getElementById('submit-btn').textContent = 'Submit';
+  const visitCopy=document.querySelector('#visit-section .section-heading p');
+  if(visitCopy)visitCopy.textContent = 'Tell us what assistance you may need. These answers are planning requests only and do not confirm flights, airport transfers, hotels or visa approval.';
   updateExcursionPricingText();
   const workshop=document.querySelector('#workshop-section .section-heading p');
   if(workshop) workshop.textContent='Tell us whether you attended the workshop already held on 21 July 2026, and whether you want announcements about any new workshops.';
@@ -170,27 +170,11 @@ function clarifyParticipantCopy() {
 clarifyParticipantCopy();
 
 function updatePublicWorkshopVisibility(hasOpenWorkshops) {
-  const section=document.getElementById('workshop-section');
-  section.hidden=!hasOpenWorkshops;
-  section.querySelector('.past-event').hidden=true;
-  section.querySelectorAll(':scope > .grid, :scope > label, :scope > .microcopy').forEach(element=>{
-    element.hidden=true;
-    element.querySelectorAll?.('input,select,textarea').forEach(control=>control.disabled=true);
-  });
   const progress=document.querySelector('.progress');
-  progress.innerHTML=hasOpenWorkshops
-    ? '<span class="active">1 Participant</span><span>2 Papers</span><span>3 Events</span><span>4 Workshops</span><span>5 Visit</span><span>6 Excursion</span><span>7 Payment</span>'
-    : '<span class="active">1 Participant</span><span>2 Papers</span><span>3 Events</span><span>4 Visit</span><span>5 Excursion</span><span>6 Payment</span>';
-  progress.style.gridTemplateColumns=`repeat(${hasOpenWorkshops?7:6},1fr)`;
-  document.querySelector('#workshop-section .section-heading > span').textContent='04';
-  document.querySelector('#visit-section .section-heading > span').textContent=hasOpenWorkshops?'05':'04';
-  document.querySelector('#excursion-section .section-heading > span').textContent=hasOpenWorkshops?'06':'05';
-  document.querySelector('#excursion-section + .form-section .section-heading > span').textContent=hasOpenWorkshops?'07':'06';
-  if(hasOpenWorkshops) document.querySelector('#workshop-section .section-heading p').textContent='Select any pre-conference workshop you want to attend. Workshop registration is recorded with your conference registration.';
+  progress.innerHTML='<span class="active">1 Attendee</span><span>2 Papers</span><span>3 Events</span><span>4 Billing</span>';
+  progress.style.gridTemplateColumns='repeat(4,1fr)';
 }
 
-const paperNote = papers.nextElementSibling;
-if (paperNote) paperNote.innerHTML='Online session access is included in the published registration benefits. Online presentation is available only to international authors on a case-by-case basis and requires approval by 15 November 2026 from new2an@crisglobal.org.<br><strong>Accepted authors:</strong> the official pages state both a 25 October camera-ready deadline and a 31 October registration deadline. Confirm the applicable payment sequence with the conference team.';
 updatePublicWorkshopVisibility(false);
 
 function isSriLankanCategory(category) {
@@ -236,9 +220,6 @@ function refreshFee() {
   document.getElementById('fee-label').textContent = category ? categoryLabel : 'Select a registration category';
   document.getElementById('fee-deadline').textContent = price.early ? 'Early fee through 31 October 2026' : 'Late fee after 31 October 2026';
   document.getElementById('fee-note').textContent = `${isSriLankanCategory(category) ? (category==='LK_AUTHOR'&&!price.early ? 'Includes the published author late surcharge.' : 'Sri Lankan-affiliation published fee.') : 'International author and non-author fee.'} No student rate is published.`;
-  const paymentCurrency=form.elements.Payment_Currency;
-  if(paymentCurrency){paymentCurrency.innerHTML=`<option value="${price.currency}">${price.currency}</option>`;paymentCurrency.value=price.currency;paymentCurrency.disabled=true;}
-  const amountPaid=form.elements.Amount_Paid;if(amountPaid)amountPaid.placeholder=String(price.amount);
 }
 
 function updateCategoryState() {
@@ -253,12 +234,13 @@ function updateCategoryState() {
   const paymentLink=document.getElementById('registration-pay-link');
   const paymentNote=document.getElementById('registration-payment-note');
   const price=currentRegistrationPrice();
-  const registrationUrl=CONFIG.paymentLinks[category];
-  paymentBox.hidden=!local;
+  const directRegistrationUrl=CONFIG.paymentLinks[category];
+  const registrationUrl=directRegistrationUrl||(category?CONFIG.crisPaymentUrl:'');
+  paymentBox.hidden=!category;
   const checkoutAvailable=registrationUrl&&(price.early||category==='LK_NON_AUTHOR');
   paymentLink.hidden=!checkoutAvailable;
-  if(checkoutAvailable){paymentLink.href=registrationUrl;paymentNote.textContent=`${price.currency} ${price.amount.toLocaleString('en-GB')}. Keep the gateway receipt and record its transaction reference below.`;}
-  else if(local){paymentNote.textContent=`The published Sri Lankan-author late fee is ${price.currency} ${price.amount.toLocaleString('en-GB')}. No verified late-fee checkout link is configured; contact new2an@crisglobal.org.`;}
+  if(checkoutAvailable){paymentLink.href=registrationUrl;paymentLink.textContent=directRegistrationUrl?'Pay registration':'Open the CRIS payment page';paymentNote.textContent=`${price.currency} ${price.amount.toLocaleString('en-GB')}. Keep the payment confirmation and record its reference below.`;}
+  else if(category){paymentLink.hidden=false;paymentLink.href=CONFIG.crisPaymentUrl;paymentLink.textContent='Open the CRIS payment page';paymentNote.textContent=`Registration fee: ${price.currency} ${price.amount.toLocaleString('en-GB')}.`;} 
 
   const galaBox=document.getElementById('gala-box');
   galaBox.hidden=!local;
@@ -268,9 +250,8 @@ function updateCategoryState() {
   document.getElementById('gala-pay-link').href=galaUrl;
   galaBox.querySelectorAll('input,select').forEach(control=>{control.disabled=!local;});
   if(!local){form.elements.Gala_Dinner_Interest.value='No';form.elements.Gala_Dinner_Payment_Reference.value='';}
-
-  if(category&&author&&role.value&&role.value!=='Author / presenting author')role.value='Author / presenting author';
-  if(category&&!author&&role.value==='Author / presenting author'){role.value='';paperCount.value='0';renderPapers();}
+  if(category&&!author&&Number(paperCount.value)){paperCount.value='0';renderPapers();}
+  updateGalaVisibility();
   refreshFee();
 }
 
@@ -293,21 +274,19 @@ function toObject(targetForm) {
   data.Currency = price.currency;
   data.Fee_Basis = price.feeBasis;
   data.Payment_Currency = price.currency;
+  data.Amount_Paid = data.Payment_Stage==='COMPLETED'?price.amount:0;
   data.Payment_Status = 'AWAITING_INSTRUCTIONS';
+  data.Participant_Role = isAuthorCategory(data.Registration_Category)?'Author / presenting author':'Non-author attendee';
   data.Gala_Dinner_Interest = isSriLankanCategory(data.Registration_Category) ? (data.Gala_Dinner_Interest||'No') : 'No';
   data.Gala_Dinner_Fee = data.Gala_Dinner_Interest === 'Yes' ? (data.Registration_Category==='LK_AUTHOR'?12000:15000) : 0;
   data.Gala_Dinner_Currency = data.Gala_Dinner_Interest === 'Yes' ? 'LKR' : '';
-  data.Excursion_Fee_Per_Person_USD = publicSettings.excursionFeeUsd;
-  data.Excursion_Total_USD = data.Excursion_Interest === 'Yes' ? publicSettings.excursionFeeUsd * Number(data.Excursion_Participant_Count || 0) : 0;
-  data.Excursion_USD_to_EUR_Rate = data.Excursion_Interest === 'Yes' ? publicSettings.usdToEurRate : '';
-  data.Excursion_Total_EUR_Indicative = data.Excursion_Interest === 'Yes' ? Number((data.Excursion_Total_USD * publicSettings.usdToEurRate).toFixed(2)) : 0;
   if(data.Bill_To==='Participant'){
     data.Billing_Legal_Name=`${data.Title||''} ${data.Full_Name||''}`.trim();
     data.Billing_Email=data.Email||'';
     data.Billing_Address=data.Country_of_Residence||'';
     data.Purchase_Order='';data.Additional_Info='';
   }
-  data.Form_Schema_Version = 5;
+  data.Form_Schema_Version = 6;
   data.Special_Event_Selections = Array.from(document.querySelectorAll('.special-event-choice:checked')).map(el => el.value).filter(id=>SPECIAL_EVENT_IDS.includes(id)).join(' | ');
   data.Workshop_Selections = Array.from(document.querySelectorAll('.future-workshop-choice:checked')).map(el => el.value).join(' | ');
   if (currentReferenceId) data.Reference_ID = currentReferenceId;
@@ -316,31 +295,17 @@ function toObject(targetForm) {
 
 function validateBusinessRules(data) {
   if(!REGISTRATION_CATEGORIES.includes(data.Registration_Category))return 'Select the published registration category that matches your affiliation and role.';
-  if(!PARTICIPANT_ROLES.includes(data.Participant_Role))return 'Select Author / presenting author, Non-author attendee or Industry professional as the participant role.';
   const authorCategory=isAuthorCategory(data.Registration_Category);
-  if(authorCategory&&data.Participant_Role!=='Author / presenting author')return 'Author registration categories require the “Author / presenting author” role.';
-  if(!authorCategory&&data.Participant_Role==='Author / presenting author')return 'Select an author registration category for a presenting author.';
   if(authorCategory&&Number(data.Paper_Count)<1)return 'Presenting authors must enter at least one accepted paper.';
   if(!authorCategory&&Number(data.Paper_Count)>0)return 'Only an author registration category may include accepted papers.';
   if(data.Registration_Category==='LK_AUTHOR'&&Number(data.Paper_Count)>1)return 'Each Sri Lankan-affiliated author registration covers one accepted paper.';
   if(data.Attendance_Mode==='Request online presentation (international author; approval required)'&&data.Registration_Category!=='INT_AUTHOR')return 'Online presentation may be requested only by an international author and still requires organiser approval.';
   if(authorCategory&&data.Attendance_Mode==='Online session access (non-presenting)')return 'An author cannot use non-presenting online access to satisfy the paper-presentation requirement.';
-  const assistance = [data.Travel_Agency_Assistance, data.Accommodation_Assistance].some(v => v && v !== 'No' && v !== 'Not sure yet');
-  if (assistance && !data.Travel_Data_Consent) return 'To request travel or hotel assistance, please allow the organising team to share the necessary details with its approved service partner.';
-  if (data.Arrival_Date && data.Departure_Date && data.Departure_Date < data.Arrival_Date) return 'Departure date cannot be earlier than arrival date.';
-  if (String(data.Visa_Support || '').startsWith('Yes') && (!data.Passport_Name.trim() || !data.Passport_Issuing_Country.trim())) return 'To request a visa invitation letter, enter your name exactly as shown in your passport and the country that issued it.';
-  if(data.Dietary_Preference&&!DIETARY_PREFERENCES.includes(data.Dietary_Preference))return 'Select Vegetarian, Non-vegetarian or Halal as the dietary preference.';
-  if (data.Attendance_Mode === 'In person in Colombo' && data.Excursion_Interest === 'Yes') {
-    const count = Number(data.Excursion_Participant_Count);
-    if (!Number.isInteger(count) || count < 1 || count > 10) return 'Enter a valid excursion participant count from 1 to 10.';
-    if (count > 1 && !data.Excursion_Participant_Names.trim()) return 'Enter the names of everyone joining the excursion with you.';
-    if (!data.Excursion_Acknowledgement) return 'Please acknowledge that the excursion details and price are still provisional.';
-    if (!(Number(publicSettings.usdToEurRate) > 0)) return 'The organiser has not configured the excursion USD-to-EUR rate yet. Please retry later or contact the organiser.';
-  }
   if (data.Payment_Stage !== 'NOT_PAID') {
-    if (!data.Transaction_Reference.trim()) return 'Enter the reference number shown on your bank-transfer receipt or online payment confirmation.';
-    if (!(Number(data.Amount_Paid) > 0)) return 'Enter the amount paid.';
+    if (!data.Transaction_Reference.trim()) return 'Enter the reference number shown on your payment confirmation.';
     if (!paymentProofFiles.length && !paymentProofPreviouslyUploaded) return 'Upload proof of payment or the gateway receipt.';
+    if(data.Gala_Dinner_Interest==='Yes'&&!data.Gala_Dinner_Payment_Reference.trim())return 'Enter the gala dinner payment reference.';
+    if(data.Gala_Dinner_Interest==='Yes'&&!galaProofFile&&!galaProofPreviouslyUploaded)return 'Upload the separate gala dinner payment confirmation.';
   }
   if(data.Gala_Dinner_Interest==='Yes'&&!isSriLankanCategory(data.Registration_Category))return 'Published gala dinner tickets are currently available only for Sri Lankan-affiliated registration categories.';
   return '';
@@ -373,17 +338,20 @@ form.addEventListener('submit', async event => {
   try {
     if(currentReferenceId)data.Reference_ID=currentReferenceId;
     data.Payment_Proof_Base64 = paymentProofFiles.length ? await Promise.all(paymentProofFiles.map(fileToBase64)) : (paymentProofPreviouslyUploaded ? '(uploaded — see folder)' : []);
+    data.Gala_Dinner_Payment_Proof_Base64 = galaProofFile ? [await fileToBase64(galaProofFile)] : (galaProofPreviouslyUploaded ? '(uploaded — see folder)' : []);
     const uploadedProofs=paymentProofFiles.length>0;
+    const uploadedGalaProof=!!galaProofFile;
     const result = await api({action:'submitRegistration',data,editToken});
     currentReferenceId=result.referenceId;editToken=result.editToken||'';
     document.getElementById('reference-display').textContent=`Reference ID: ${currentReferenceId}`;
     if(uploadedProofs){paymentProofFiles=[];paymentProofPreviouslyUploaded=true;renderProofList();}
+    if(uploadedGalaProof){galaProofFile=null;galaProofPreviouslyUploaded=true;document.getElementById('gala-payment-proof').value='';renderGalaProofList();}
     localStorage.removeItem(CONFIG.draftKey);
     localStorage.setItem('new2an2026_last_reference', JSON.stringify({referenceId:result.referenceId,email:data.Email}));
-    const checkoutAvailable=!document.getElementById('registration-pay-link').hidden;
-    setMessage(`Registration saved. Your reference is ${result.referenceId}. ${checkoutAvailable?'Use the official checkout shown above and keep its receipt.':'Follow the verified payment instructions on your proforma or contact the conference team.'}`, 'success');
+    const travelLink=data.Payment_Stage==='COMPLETED'?' You can now complete post-registration travel and excursion details from the Travel tab.':'';
+    setMessage(`Registration saved. Your reference is ${result.referenceId}.${travelLink}`, 'success');
   } catch (error) { setMessage(error.name === 'AbortError' ? 'The server took too long to respond. Please retry; your draft is preserved.' : error.message, 'error'); }
-  finally { button.disabled = false; button.textContent = 'Send registration details'; }
+  finally { button.disabled = false; button.textContent = 'Submit'; }
 });
 
 let draftTimer;
@@ -392,6 +360,7 @@ form.addEventListener('input', () => { clearTimeout(draftTimer); draftTimer = se
 function restore(data) {
   const restoredData={...(data||{})};
   restoredData.Participant_Role=LEGACY_PARTICIPANT_ROLES[restoredData.Participant_Role]||restoredData.Participant_Role;
+  if(['PAID_GATEWAY','PAID_TRANSFER','PAID_OTHER'].includes(restoredData.Payment_Stage))restoredData.Payment_Stage='COMPLETED';
   if (restoredData.Reference_ID) {
     currentReferenceId = String(restoredData.Reference_ID);
     document.getElementById('reference-display').textContent = `Reference ID: ${currentReferenceId}`;
@@ -408,10 +377,12 @@ function restore(data) {
   const specialEventIds=String(restoredData.Special_Event_Selections||'').split(' | ').filter(Boolean);
   document.querySelectorAll('.special-event-choice').forEach(el => {el.checked=specialEventIds.includes(el.value);});
   if (restoredData.Payment_Proof_Base64 === '(uploaded — see folder)') paymentProofPreviouslyUploaded = true;
+  if (restoredData.Gala_Dinner_Payment_Proof_Base64 === '(uploaded — see folder)') galaProofPreviouslyUploaded = true;
   updateAttendanceVisibility();
   updateBillingVisibility();
   updateCategoryState();
   renderProofList();
+  renderGalaProofList();
 }
 
 function fileToBase64(file) {
@@ -423,22 +394,8 @@ function fileToBase64(file) {
   });
 }
 
-function updateExcursionVisibility() {
-  const confirmed = document.getElementById('excursion-interest').value === 'Yes';
-  const details = document.getElementById('excursion-details');
-  details.hidden = !confirmed;
-  details.querySelectorAll('input,select,textarea').forEach(control => { control.disabled = !confirmed; });
-  document.getElementById('excursion-count').disabled = !confirmed;
-  if (!confirmed) form.elements.Excursion_Acknowledgement.checked = false;
-}
-
 function updateAttendanceVisibility() {
-  const travelling = form.elements.Attendance_Mode.value === 'In person in Colombo';
-  ['visit-section','excursion-section'].forEach(id => {
-    const section=document.getElementById(id); section.hidden=!travelling;
-    section.querySelectorAll('input,select,textarea').forEach(el => { el.disabled=!travelling; });
-  });
-  if (travelling) updateExcursionVisibility();
+  return;
 }
 
 function updateBillingVisibility(){
@@ -451,7 +408,7 @@ function updateBillingVisibility(){
     if(label)label.hidden=!institutional;
   });
   const box=document.querySelector('.proforma-box span');
-  if(box&&!currentReferenceId)box.textContent=institutional?'Provide the organisation details above for approval or reimbursement.':'A personal proforma will use your participant name, email and country.';
+  if(box&&!currentReferenceId)box.textContent=institutional?'Provide the organisation details above for approval or reimbursement.':'A personal invoice will use your attendee name, email and country.';
 }
 
 function renderProofList() {
@@ -460,12 +417,29 @@ function renderProofList() {
   box.textContent = paymentProofFiles.map(f => `${f.name} (${(f.size/1024/1024).toFixed(2)} MB)`).join(' · ');
 }
 
+function updateGalaVisibility(){
+  const active=isSriLankanCategory(registrationCategory.value)&&form.elements.Gala_Dinner_Interest.value==='Yes';
+  const fields=document.getElementById('gala-active-fields');
+  if(!fields)return;
+  fields.hidden=!active;
+  fields.querySelectorAll('input').forEach(control=>{control.disabled=!active;});
+  document.getElementById('gala-box')?.classList.toggle('disabled-panel',!active);
+}
+
+function renderGalaProofList(){
+  const box=document.getElementById('gala-proof-list');if(!box)return;
+  box.textContent=galaProofFile?`${galaProofFile.name} (${(galaProofFile.size/1024/1024).toFixed(2)} MB)`:(galaProofPreviouslyUploaded?'Previously uploaded gala proof will be retained.':'No gala dinner proof selected.');
+}
+
 function renderWorkshopChoices() {
-  let host=document.getElementById('future-workshop-list');
-  if(!host){host=document.createElement('div');host.id='future-workshop-list';document.querySelector('#workshop-section .past-event').after(host);}
+  const host=document.getElementById('active-workshop-list');
+  const pastHost=document.getElementById('past-events-panel');
+  if(!host||!pastHost)return;
   const available=workshopSettings.filter(w=>w.status==='open');
+  const past=workshopSettings.filter(w=>w.status==='closed'||w.status==='completed');
   updatePublicWorkshopVisibility(available.length>0);
-  host.innerHTML=available.length?`<div class="future-events"><h4>Additional workshops open for registration</h4>${available.map(w=>`<label class="check event-choice"><input type="checkbox" class="future-workshop-choice" value="${escapeHtml(w.id)}"><span><strong>${escapeHtml(w.title)}</strong><small>${escapeHtml(w.date)} · ${escapeHtml(w.time||'Time TBA')} · ${escapeHtml(w.venue||'Venue TBA')} · ${Number(w.fee)===0?'Free':`${escapeHtml(w.currency)} ${Number(w.fee).toFixed(2)}`}</small></span></label>`).join('')}</div>`:'<p class="microcopy">No additional workshop is currently open. Select future-workshop notifications to receive official announcements.</p>';
+  host.innerHTML=available.length?`<div class="future-events"><h4>Additional active workshops</h4>${available.map(w=>`<label class="check event-choice"><input type="checkbox" class="future-workshop-choice" value="${escapeHtml(w.id)}"><span><strong>${escapeHtml(w.title)}</strong><small>Date: ${escapeHtml(w.date||'TBA')} · Time: ${escapeHtml(w.time||'TBA')} · Venue: ${escapeHtml(w.venue||'TBA')}</small></span></label>`).join('')}</div>`:'';
+  pastHost.innerHTML=past.length?`<div class="future-events"><h4>Past / expired events</h4>${past.map(w=>`<div class="past-event-row"><strong>${escapeHtml(w.title)}</strong><small>Date: ${escapeHtml(w.date||'TBA')} · Time: ${escapeHtml(w.time||'TBA')} · Venue: ${escapeHtml(w.venue||'TBA')}</small></div>`).join('')}</div>`:'<p class="microcopy">No past events are recorded.</p>';
 }
 
 async function loadWorkshopSettings(){
@@ -479,7 +453,7 @@ function ensureWorkshopAdmin(){
   const panel=document.getElementById('admin-panel');
   if(document.getElementById('workshop-admin'))return;
   const section=document.createElement('section');section.id='workshop-admin';section.className='workshop-admin';
-  section.innerHTML=`<div class="section-heading"><span>I</span><div><h3>Invoice issuer and payment settings</h3><p>Use verified legal details. These values appear on organization-facing proforma invoices.</p></div></div>
+  section.innerHTML=`<div class="section-heading"><span>I</span><div><h3>Invoice issuer and payment settings</h3><p>Use verified legal details. These values appear on organization-facing payment invoices.</p></div></div>
     <div class="grid two">
       <label>Issuer legal name<input id="invoice-issuer-name" required></label>
       <label>Issuer email<input id="invoice-issuer-email" type="email" required></label>
@@ -552,9 +526,10 @@ async function saveWorkshopSettings(){
   catch(error){box.textContent=error.message;box.className='form-message error';}
 }
 
-document.getElementById('excursion-interest').addEventListener('change', updateExcursionVisibility);
 form.elements.Attendance_Mode.addEventListener('change', updateAttendanceVisibility);
 form.elements.Bill_To.addEventListener('change',updateBillingVisibility);
+form.elements.Gala_Dinner_Interest.addEventListener('change',updateGalaVisibility);
+document.getElementById('show-past-events').addEventListener('click',event=>{const panel=document.getElementById('past-events-panel'),open=panel.hidden;panel.hidden=!open;event.currentTarget.setAttribute('aria-expanded',String(open));event.currentTarget.textContent=open?'Hide Past / Expired Events':'Show Past / Expired Events';});
 document.getElementById('payment-proof').addEventListener('change', event => {
   const allowed = ['application/pdf','image/jpeg','image/png','image/webp'];
   const selected = Array.from(event.target.files || []);
@@ -565,28 +540,34 @@ document.getElementById('payment-proof').addEventListener('change', event => {
   paymentProofPreviouslyUploaded = false;
   renderProofList();
 });
+document.getElementById('gala-payment-proof').addEventListener('change',event=>{
+  const file=event.target.files[0]||null,allowed=['application/pdf','image/jpeg','image/png','image/webp'];
+  if(file&&(!allowed.includes(file.type)||file.size>5*1024*1024)){setMessage(`${file.name} must be a PDF, JPEG, PNG or WebP file no larger than 5 MB.`,'error');event.target.value='';galaProofFile=null;}
+  else{galaProofFile=file;galaProofPreviouslyUploaded=false;}
+  renderGalaProofList();
+});
 
 document.getElementById('proforma-btn').addEventListener('click', generateProforma);
 
 async function generateProforma() {
   const institutional=form.elements.Bill_To.value==='Institution / organisation';
-  const required = ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Registration_Category','Participant_Role','Attendance_Mode','Bill_To'].concat(institutional?['Billing_Legal_Name','Billing_Email','Billing_Address']:[]);
+  const required = ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Registration_Category','Attendance_Mode','Bill_To'].concat(institutional?['Billing_Legal_Name','Billing_Email','Billing_Address']:[]);
   const missing = required.map(name => form.elements[name]).find(el => !el || !String(el.value).trim());
-  if (missing) { missing.focus(); setMessage('Complete the required participant, paper and billing fields before downloading the pre-payment invoice.', 'error'); return; }
-  if (role.value === 'Author / presenting author' && Number(paperCount.value) < 1) { setMessage('Presenting authors must enter at least one accepted paper.', 'error'); return; }
+  if (missing) { missing.focus(); setMessage('Complete the required attendee, paper and billing fields before downloading the payment invoice.', 'error'); return; }
+  if (isAuthorCategory(registrationCategory.value) && Number(paperCount.value) < 1) { setMessage('Presenting authors must enter at least one accepted paper.', 'error'); return; }
   for (let i=1;i<=Number(paperCount.value);i++) if (!form.elements[`Paper_${i}_ID`]?.value.trim() || !form.elements[`Paper_${i}_Title`]?.value.trim()) { setMessage(`Complete the ID and title for paper ${i}.`, 'error'); return; }
   if (!window.jspdf) { setMessage('The PDF library is unavailable. Check your connection and retry.', 'error'); return; }
   const settingsMissing=[['issuerLegalName','issuer legal name'],['issuerAddress','issuer address'],['issuerTaxStatement','tax statement'],['issuerEmail','issuer email'],['paymentInstructions','payment instructions']].filter(([key])=>!String(publicSettings[key]||'').trim()).map(([,label])=>label);
-  if(settingsMissing.length){setMessage(`The organiser must configure the invoice ${settingsMissing.join(', ')} before an organization-ready proforma can be generated.`,'error');return;}
-  if(publicSettings.invoiceSettingsApproved!==true){setMessage('The organiser has not yet verified and approved the invoice issuer, tax, bank, payment and exchange-rate settings. A proforma cannot be generated.','error');return;}
+  if(settingsMissing.length){setMessage(`The organiser must configure the invoice ${settingsMissing.join(', ')} before an organization-ready invoice can be generated.`,'error');return;}
+  if(publicSettings.invoiceSettingsApproved!==true){setMessage('The organiser has not yet verified and approved the invoice issuer, tax and payment settings. An invoice cannot be generated.','error');return;}
   if(!form.reportValidity()){setMessage('Complete the registration and policy agreement before generating the invoice.','error');return;}
   const data = toObject(form),businessIssue=validateBusinessRules(data);let price=currentRegistrationPrice();
   if(businessIssue){setMessage(businessIssue,'error');return;}
-  if(data.Excursion_Interest==='Yes'&&!(Number(publicSettings.usdToEurRate)>0)){setMessage('The organiser has not configured the excursion USD-to-EUR rate yet, so an excursion invoice cannot be generated. Please retry later or contact the organiser.','error');return;}
   const archiveButton=document.getElementById('proforma-btn');archiveButton.disabled=true;archiveButton.textContent='Securing registration...';
   try{
     if(currentReferenceId)data.Reference_ID=currentReferenceId;
     data.Payment_Proof_Base64=paymentProofFiles.length?await Promise.all(paymentProofFiles.map(fileToBase64)):(paymentProofPreviouslyUploaded?'(uploaded — see folder)':[]);
+    data.Gala_Dinner_Payment_Proof_Base64=galaProofFile?[await fileToBase64(galaProofFile)]:(galaProofPreviouslyUploaded?'(uploaded — see folder)':[]);
     const uploadedProofs=paymentProofFiles.length>0;
     const saved=await api({action:'submitRegistration',data,editToken});
     currentReferenceId=saved.referenceId;editToken=saved.editToken||'';
@@ -598,17 +579,17 @@ async function generateProforma() {
     data.Gala_Dinner_Fee=Number(authoritative.galaDinnerFee||0);data.Gala_Dinner_Currency=String(authoritative.galaDinnerCurrency||'');
     data.Excursion_Fee_Per_Person_USD=Number(authoritative.excursionFeePerPersonUsd||0);data.Excursion_Total_USD=Number(authoritative.excursionTotalUsd||0);data.Excursion_USD_to_EUR_Rate=Number(authoritative.excursionUsdToEurRate||0);data.Excursion_Total_EUR_Indicative=Number(authoritative.excursionTotalEurIndicative||0);
     if(uploadedProofs){paymentProofFiles=[];paymentProofPreviouslyUploaded=true;renderProofList();}
-  }catch(error){archiveButton.disabled=false;archiveButton.textContent='Download pre-payment invoice PDF';setMessage(error.name==='AbortError'?'The registration service took too long to respond. Please retry.':error.message,'error');return;}
+  }catch(error){archiveButton.disabled=false;archiveButton.textContent='Download payment invoice';setMessage(error.name==='AbortError'?'The registration service took too long to respond. Please retry.':error.message,'error');return;}
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({unit:'mm',format:'a4'});
   const left=14,right=196,width=right-left,navy=[9,35,60],ink=[23,39,51],muted=[90,105,112],rule=[205,218,222];
   const issueDate=new Date(),dueDate=new Date(issueDate);dueDate.setDate(dueDate.getDate()+Number(publicSettings.paymentDueDays||14));
   const dateText=date=>date.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
-  const invoiceNumber=`PRO-${currentReferenceId}`;
+  const invoiceNumber=`REG-${currentReferenceId}`;
   const fit=(text,maxWidth,maxLines=2)=>{let lines=doc.splitTextToSize(String(text||'-'),maxWidth);if(lines.length>maxLines){lines=lines.slice(0,maxLines);let last=lines[maxLines-1];while(doc.getTextWidth(last+'...')>maxWidth&&last.length)last=last.slice(0,-1);lines[maxLines-1]=last+'...';}return lines;};
   const small=(label,value,x,y,maxWidth,maxLines=2)=>{doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text(label.toUpperCase(),x,y);doc.setFont('helvetica','normal');doc.setFontSize(7.8);doc.setTextColor(...ink);const lines=fit(value,maxWidth,maxLines);doc.text(lines,x,y+3.5);return y+3.5+lines.length*3.5;};
-  doc.setFillColor(...navy);doc.rect(0,0,210,29,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(16);doc.text('NEW2AN 2026',left,11);doc.setFontSize(8.5);doc.text('PROFORMA INVOICE',left,21);doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.text(fit(publicSettings.issuerLegalName,85,1),right,10,{align:'right'});doc.setFontSize(7);doc.text('15-17 December 2026  |  Colombo, Sri Lanka',right,21,{align:'right'});
-  let y=35;doc.setFillColor(246,249,250);doc.roundedRect(left,y,width,16,1.5,1.5,'F');doc.setFont('helvetica','bold');doc.setFontSize(6.3);doc.setTextColor(...muted);doc.text('PROFORMA NUMBER',left+4,y+5);doc.text('ISSUE DATE',83,y+5);doc.text('PAYMENT DUE',135,y+5);doc.setFontSize(8.7);doc.setTextColor(...ink);doc.text(invoiceNumber,left+4,y+12);doc.text(dateText(issueDate),83,y+12);doc.text(dateText(dueDate),135,y+12);y+=20;
+  doc.setFillColor(...navy);doc.rect(0,0,210,29,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(16);doc.text('NEW2AN 2026',left,11);doc.setFontSize(8.5);doc.text('REGISTRATION PAYMENT INVOICE',left,21);doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.text(fit(publicSettings.issuerLegalName,85,1),right,10,{align:'right'});doc.setFontSize(7);doc.text('15-17 December 2026  |  Colombo, Sri Lanka',right,21,{align:'right'});
+  let y=35;doc.setFillColor(246,249,250);doc.roundedRect(left,y,width,16,1.5,1.5,'F');doc.setFont('helvetica','bold');doc.setFontSize(6.3);doc.setTextColor(...muted);doc.text('INVOICE NUMBER',left+4,y+5);doc.text('ISSUE DATE',83,y+5);doc.text('PAYMENT DUE',135,y+5);doc.setFontSize(8.7);doc.setTextColor(...ink);doc.text(invoiceNumber,left+4,y+12);doc.text(dateText(issueDate),83,y+12);doc.text(dateText(dueDate),135,y+12);y+=20;
   doc.setFillColor(255,249,235);doc.roundedRect(left,y,width,10,1.5,1.5,'F');doc.setFillColor(202,145,35);doc.roundedRect(left,y,2,10,1,1,'F');doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.setTextColor(...ink);doc.text('DOCUMENT STATUS',left+5,y+4);doc.setFont('helvetica','normal');doc.setFontSize(6.4);doc.text('For approval and payment processing only - not proof of payment, a tax invoice, or a receipt.',left+30,y+4);doc.setTextColor(...muted);doc.text('For reimbursement, obtain the official paid receipt after payment verification.',left+30,y+7.2);y+=15;
   const colWidth=84,col2=112;doc.setDrawColor(...rule);doc.line(left,y,right,y);y+=5;doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...navy);doc.text('Issued by',left,y);doc.text(institutional?'Bill to - institution':'Bill to - participant',col2,y);y+=5;
   let leftY=small('Legal issuer',publicSettings.issuerLegalName,left,y,colWidth,2);leftY=small('Registered address',publicSettings.issuerAddress,left,leftY+2,colWidth,2);if(publicSettings.issuerRegistrationNumber)leftY=small('Registration number',publicSettings.issuerRegistrationNumber,left,leftY+2,colWidth,1);leftY=small('Contact',[publicSettings.issuerEmail,publicSettings.issuerPhone].filter(Boolean).join(' | '),left,leftY+2,colWidth,2);
@@ -616,9 +597,6 @@ async function generateProforma() {
   let rightY=small('Name',billName,col2,y,colWidth,2);rightY=small('Address / country',billAddress,col2,rightY+2,colWidth,2);rightY=small('Email',billEmail,col2,rightY+2,colWidth,1);if(institutional&&data.Purchase_Order)rightY=small('PO / tax reference',data.Purchase_Order,col2,rightY+2,colWidth,1);rightY=small('Participant',`${data.Title} ${data.Full_Name}`,col2,rightY+2,colWidth,1);y=Math.max(leftY,rightY)+4;
   doc.line(left,y,right,y);y+=5;doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...navy);doc.text('Conference registration',left,y);doc.setFont('helvetica','normal');doc.setFontSize(7.2);doc.setTextColor(...ink);doc.text(fit(`NEW2AN 2026 | 15-17 Dec 2026 | ${data.Registration_Category} | ${data.Attendance_Mode}`,width,1),left,y+4);y+=9;for(let i=1;i<=Number(data.Paper_Count||0);i++){doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text(`PAPER ${i}`,left,y);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(...ink);doc.text(fit(`${data[`Paper_${i}_ID`]} - ${data[`Paper_${i}_Title`]}`,width-20,1),left+17,y);y+=4;}
   y+=2;doc.setFillColor(...navy);doc.rect(left,y,width,7,'F');doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(7.3);doc.text('DESCRIPTION',left+3,y+4.8);doc.text('QTY',134,y+4.8,{align:'center'});doc.text('UNIT PRICE',162,y+4.8,{align:'right'});doc.text('AMOUNT',right-3,y+4.8,{align:'right'});y+=12;doc.setTextColor(...ink);doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text('Full NEW2AN registration - three conference days',left+3,y);doc.text('1',134,y,{align:'center'});doc.text(`${price.currency} ${price.amount.toFixed(2)}`,162,y,{align:'right'});doc.text(`${price.currency} ${price.amount.toFixed(2)}`,right-3,y,{align:'right'});y+=5;doc.setFontSize(6.8);doc.setTextColor(...muted);doc.text('Conference participation, online session access and digital Springer LNCS proceedings.',left+3,y);y+=5;doc.setFillColor(246,249,250);doc.roundedRect(left,y,width,13,1.5,1.5,'F');doc.setTextColor(...navy);doc.setFont('helvetica','bold');doc.setFontSize(7);doc.text('TOTAL DUE NOW',left+4,y+5);doc.setFontSize(12);doc.text(`${price.currency} ${price.amount.toFixed(2)}`,right-4,y+9,{align:'right'});doc.setFont('helvetica','normal');doc.setFontSize(6.3);doc.setTextColor(...muted);doc.text('Conference registration only',left+4,y+9);y+=18;
-  if(data.Gala_Dinner_Interest==='Yes'){
-    doc.setFillColor(255,249,235);doc.roundedRect(left,y,width,13,1.5,1.5,'F');doc.setTextColor(...navy);doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.text('GALA DINNER - PAY SEPARATELY',left+4,y+5);doc.text(`LKR ${Number(data.Gala_Dinner_Fee).toFixed(2)}`,right-4,y+5,{align:'right'});doc.setFont('helvetica','normal');doc.setFontSize(6.2);doc.setTextColor(...muted);doc.text('Separate PayHere checkout. This amount is not included in TOTAL DUE NOW.',left+4,y+9.5);y+=17;
-  }
   if(data.Excursion_Interest==='Yes'){
     const count=Number(data.Excursion_Participant_Count||1),fee=Number(data.Excursion_Fee_Per_Person_USD),usdTotal=Number(data.Excursion_Total_USD),rate=Number(data.Excursion_USD_to_EUR_Rate),eurTotal=Number(data.Excursion_Total_EUR_Indicative);
     doc.setFillColor(239,246,248);doc.roundedRect(left,y,width,28,1.5,1.5,'F');doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...navy);doc.text('ESTIMATED EXCURSION COST - PAY ON THE EXCURSION DAY',left+4,y+5);doc.setFontSize(6);doc.setTextColor(...muted);doc.text('PARTICIPANTS',left+4,y+11);doc.text('EST. PRICE / PERSON',left+43,y+11);doc.text('EST. USD TOTAL',left+89,y+11);doc.text('INDICATIVE EUR',left+129,y+11);doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...ink);doc.text(String(count),left+4,y+15.5);doc.text(`USD ${fee.toFixed(2)}`,left+43,y+15.5);doc.text(`USD ${usdTotal.toFixed(2)}`,left+89,y+15.5);doc.text(`EUR ${eurTotal.toFixed(2)}`,left+129,y+15.5);doc.setFont('helvetica','normal');doc.setFontSize(6.2);doc.setTextColor(...muted);doc.text(`1 USD = EUR ${rate.toFixed(4)}. Approximate only; separate from registration and not due now.`,left+4,y+21);doc.text('Includes transport and evening refreshment. Lunch is not included.',left+4,y+24.5);y+=32;
@@ -631,17 +609,24 @@ async function generateProforma() {
   button.disabled=true;button.textContent='Archiving invoice...';
   try{
     const pdfData=doc.output('datauristring').split(',')[1];
-    await api({action:'saveInvoiceVersion',referenceId:currentReferenceId,email:data.Email,editToken,file:{mimeType:'application/pdf',data:pdfData}});
-    doc.save(`NEW2AN2026_Proforma_${currentReferenceId}.pdf`);
+    await api({action:'saveInvoiceVersion',referenceId:currentReferenceId,email:data.Email,editToken,invoiceKind:'registration',file:{mimeType:'application/pdf',data:pdfData}});
+    doc.save(`NEW2AN2026_Registration_Invoice_${currentReferenceId}.pdf`);
+    if(data.Gala_Dinner_Interest==='Yes'){
+      const galaDoc=new jsPDF({unit:'mm',format:'a4'});
+      galaDoc.setFillColor(...navy);galaDoc.rect(0,0,210,29,'F');galaDoc.setTextColor(255);galaDoc.setFont('helvetica','bold');galaDoc.setFontSize(16);galaDoc.text('NEW2AN 2026',left,11);galaDoc.setFontSize(8.5);galaDoc.text('GALA DINNER PAYMENT INVOICE',left,21);
+      galaDoc.setTextColor(...ink);galaDoc.setFontSize(10);galaDoc.text(`Invoice: GALA-${currentReferenceId}`,left,42);galaDoc.setFont('helvetica','normal');galaDoc.setFontSize(9);galaDoc.text(`Participant: ${data.Title} ${data.Full_Name}`,left,52);galaDoc.text('Gala dinner ticket',left,68);galaDoc.setFont('helvetica','bold');galaDoc.text(`LKR ${Number(data.Gala_Dinner_Fee).toFixed(2)}`,right,68,{align:'right'});galaDoc.setFont('helvetica','normal');galaDoc.setFontSize(8);galaDoc.setTextColor(...muted);galaDoc.text('This invoice is separate from the conference registration invoice and must be paid separately.',left,79);galaDoc.text(`Payment reference: ${currentReferenceId}`,left,88);galaDoc.text('This document is not proof of payment or a receipt.',left,97);
+      const galaPdfData=galaDoc.output('datauristring').split(',')[1];
+      await api({action:'saveInvoiceVersion',referenceId:currentReferenceId,email:data.Email,editToken,invoiceKind:'gala',file:{mimeType:'application/pdf',data:galaPdfData}});
+      galaDoc.save(`NEW2AN2026_Gala_Dinner_Invoice_${currentReferenceId}.pdf`);
+    }
     localStorage.setItem('new2an2026_last_reference',JSON.stringify({referenceId:currentReferenceId,email:data.Email}));
-    setMessage(`Pre-payment invoice archived in the registration folder and downloaded. Keep reference ID ${currentReferenceId}; you will need it for payment and to reopen this registration.`, 'success');
+    setMessage(`${data.Gala_Dinner_Interest==='Yes'?'Separate registration and gala dinner invoices were':'The registration invoice was'} archived and downloaded. Keep reference ID ${currentReferenceId}.`, 'success');
   }catch(error){
     setMessage(error.name==='AbortError'?'The invoice archive took too long to respond. Please retry; no unarchived download was created.':`The invoice could not be archived, so it was not downloaded. ${error.message}`,'error');
-  }finally{button.disabled=false;button.textContent='Download pre-payment invoice PDF';}
+  }finally{button.disabled=false;button.textContent='Download payment invoice';}
 }
 
 paperCount.addEventListener('change', renderPapers);
-role.addEventListener('change', () => { if (role.value !== 'Author / presenting author' && Number(paperCount.value)) { paperCount.value = '0'; renderPapers(); } });
 registrationCategory.addEventListener('change',updateCategoryState);
 
 document.getElementById('lookup-btn').addEventListener('click', async () => {

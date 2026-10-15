@@ -32,18 +32,15 @@ assert(errors({Registration_Category:'LK_AUTHOR',Attendance_Mode:'Request online
 assert(errors({Registration_Category:'INT_NON_AUTHOR'}).some(x=>x.includes('author registration category')));
 assert.deepStrictEqual(errors({Registration_Category:'INT_NON_AUTHOR',Participant_Role:'Non-author attendee',Paper_Count:0,Attendance_Mode:'Online session access (non-presenting)',Emergency_Contact_Name:'',Emergency_Contact_Phone:''}),[]);
 assert.deepStrictEqual(errors({Registration_Category:'LK_NON_AUTHOR',Participant_Role:'Non-author attendee',Paper_Count:0,Payment_Currency:'LKR'}),[]);
-const retiredRole=context.normaliseRegistration({...base,Registration_Category:'INT_NON_AUTHOR',Participant_Role:'Invited or keynote speaker',Paper_Count:0});
-assert(context.validateRegistration(retiredRole).some(x=>x.includes('valid participant role')));
+const derivedRole=context.normaliseRegistration({...base,Registration_Category:'INT_NON_AUTHOR',Participant_Role:'Invited or keynote speaker',Paper_Count:0});
+assert.strictEqual(derivedRole.Participant_Role,'Non-author attendee');
 assert(errors({Dietary_Preference:'Vegan'}).some(x=>x.includes('Vegetarian')));
 assert.deepStrictEqual(errors({Dietary_Preference:'Non-vegetarian'}),[]);
 assert(errors({Attendance_Mode:'Online session access (non-presenting)'}).some(x=>x.includes('non-presenting online access')));
-assert(errors({Excursion_Interest:'Yes',Excursion_Participant_Count:2,Excursion_Acknowledgement:true}).some(x=>x.includes('accompanying')));
-assert(errors({Excursion_Interest:'Yes',Excursion_Participant_Count:1,Excursion_Acknowledgement:false}).some(x=>x.includes('acknowledgement')));
-assert.deepStrictEqual(errors({Excursion_Interest:'Maybe — send details when available',Excursion_Participant_Count:0,Excursion_Acknowledgement:false}),[]);
-assert(errors({Payment_Stage:'PAID_TRANSFER',Transaction_Reference:'',Amount_Paid:400,Payment_Proof_Base64:[]}).some(x=>x.includes('Payment reference')));
-assert.deepStrictEqual(errors({Payment_Stage:'PAID_GATEWAY',Transaction_Reference:'TX-1',Amount_Paid:400,Payment_Proof_Base64:[{name:'receipt.pdf',mimeType:'application/pdf',data:'AAAA'}]}),[]);
-assert(errors({Payment_Stage:'PAID_GATEWAY',Transaction_Reference:'TX-1',Amount_Paid:400,Payment_Proof_Base64:[{name:'bad.exe',mimeType:'application/octet-stream',data:'AAAA'}]}).some(x=>x.includes('PDF')));
-assert(errors({Registration_Category:'LK_NON_AUTHOR',Participant_Role:'Non-author attendee',Paper_Count:0,Payment_Stage:'PAID_GATEWAY',Transaction_Reference:'TX-2',Amount_Paid:40000,Payment_Currency:'EUR',Payment_Proof_Base64:[{name:'receipt.pdf',mimeType:'application/pdf',data:'AAAA'}]}).some(x=>x.includes('currency')));
+assert(errors({Payment_Stage:'COMPLETED',Transaction_Reference:'',Payment_Proof_Base64:[]}).some(x=>x.includes('Payment reference')));
+assert.deepStrictEqual(errors({Payment_Stage:'COMPLETED',Transaction_Reference:'TX-1',Payment_Proof_Base64:[{name:'receipt.pdf',mimeType:'application/pdf',data:'AAAA'}]}),[]);
+assert(errors({Payment_Stage:'COMPLETED',Transaction_Reference:'TX-1',Payment_Proof_Base64:[{name:'bad.exe',mimeType:'application/octet-stream',data:'AAAA'}]}).some(x=>x.includes('PDF')));
+assert(errors({Registration_Category:'LK_NON_AUTHOR',Paper_Count:0,Payment_Stage:'COMPLETED',Transaction_Reference:'TX-2',Payment_Proof_Base64:[{name:'receipt.pdf',mimeType:'application/pdf',data:'AAAA'}],Gala_Dinner_Interest:'Yes'}).some(x=>x.includes('Gala dinner payment reference')));
 assert.strictEqual(context.feeFor(new Date('2026-10-31T18:00:00Z')),400);
 assert.strictEqual(context.feeFor(new Date('2026-11-01T18:00:00Z')),500);
 assert.strictEqual(context.feeFor(new Date('2026-10-31T18:00:00Z'),'LK_AUTHOR'),40000);
@@ -57,7 +54,7 @@ const specialEvents=context.normaliseRegistration({...base,Special_Event_Selecti
 assert.strictEqual(specialEvents.Special_Event_Selections,'digital-transformation-ai-panel | innovation-workshop');
 assert.strictEqual(specialEvents.Special_Event_Notes,'Please send the final schedule.');
 
-const validTravel={Ticket_Departure_City_Airport:'HEL',Preferred_Departure_Home_Date:'2026-12-13',Preferred_Arrival_Sri_Lanka_Date:'2026-12-14',Preferred_Departure_Sri_Lanka_Date:'2026-12-18',Preferred_Departure_Sri_Lanka_Time:'08:30',Ticket_Destination_City_Airport:'HEL',Passport_Number:'P123',Date_of_Birth:'1980-01-01',Passport_Issue_Date:'2022-01-01',Passport_Expiry_Date:'2032-01-01',Place_Country_of_Birth:'Helsinki, Finland',Travel_Details_Consent:true,Passport_Bio_Page_Base64:[{name:'passport.pdf',mimeType:'application/pdf',data:'AAAA'}]};
+const validTravel={Travel_Agency_Assistance:'Yes — flight options',Ticket_Departure_City_Airport:'HEL',Preferred_Departure_Home_Date:'2026-12-13',Preferred_Arrival_Sri_Lanka_Date:'2026-12-14',Preferred_Departure_Sri_Lanka_Date:'2026-12-18',Preferred_Departure_Sri_Lanka_Time:'08:30',Ticket_Destination_City_Airport:'HEL',Passport_Number:'P123',Date_of_Birth:'1980-01-01',Passport_Issue_Date:'2022-01-01',Passport_Expiry_Date:'2032-01-01',Place_Country_of_Birth:'Helsinki, Finland',Travel_Details_Consent:true,Passport_Bio_Page_Base64:[{name:'passport.pdf',mimeType:'application/pdf',data:'AAAA'}]};
 assert.deepStrictEqual(Array.from(context.validateTravelDetails(context.normaliseTravelDetails(validTravel),false)),[]);
 assert(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Passport_Expiry_Date:'2021-01-01'}),false).some(x=>x.includes('expiry date')));
 assert(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Passport_Bio_Page_Base64:[]}),false).some(x=>x.includes('passport bio page')));
