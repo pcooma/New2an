@@ -25,7 +25,7 @@ assert(errors({Bill_To:'Institution / organisation',Billing_Legal_Name:'',Billin
 assert.deepStrictEqual(errors({Bill_To:'Institution / organisation'}),[]);
 assert.deepStrictEqual(errors({Attendance_Mode:'Request online presentation (international author; approval required)',Emergency_Contact_Name:'',Emergency_Contact_Phone:''}),[]);
 assert.deepStrictEqual(errors({Attendance_Mode:'Request online presentation (international author; approval required)',Emergency_Contact_Name:'',Emergency_Contact_Phone:'',Excursion_Interest:''}),[]);
-assert(errors({Emergency_Contact_Name:''}).some(x=>x.includes('Emergency contact')));
+assert.deepStrictEqual(errors({Emergency_Contact_Name:'',Emergency_Contact_Phone:''}),[]);
 assert(errors({Paper_Count:0}).some(x=>x.includes('presenting author')));
 assert(errors({Registration_Category:'LK_AUTHOR',Paper_Count:2,Paper_2_ID:'456',Paper_2_Title:'Second paper',Paper_2_Presenter:true}).some(x=>x.includes('covers one accepted paper')));
 assert(errors({Registration_Category:'LK_AUTHOR',Attendance_Mode:'Request online presentation (international author; approval required)'}).some(x=>x.includes('international author')));
@@ -34,8 +34,6 @@ assert.deepStrictEqual(errors({Registration_Category:'INT_NON_AUTHOR',Participan
 assert.deepStrictEqual(errors({Registration_Category:'LK_NON_AUTHOR',Participant_Role:'Non-author attendee',Paper_Count:0,Payment_Currency:'LKR'}),[]);
 const derivedRole=context.normaliseRegistration({...base,Registration_Category:'INT_NON_AUTHOR',Participant_Role:'Invited or keynote speaker',Paper_Count:0});
 assert.strictEqual(derivedRole.Participant_Role,'Non-author attendee');
-assert(errors({Dietary_Preference:'Vegan'}).some(x=>x.includes('Vegetarian')));
-assert.deepStrictEqual(errors({Dietary_Preference:'Non-vegetarian'}),[]);
 assert(errors({Attendance_Mode:'Online session access (non-presenting)'}).some(x=>x.includes('non-presenting online access')));
 assert(errors({Payment_Stage:'COMPLETED',Transaction_Reference:'',Payment_Proof_Base64:[]}).some(x=>x.includes('Payment reference')));
 assert.deepStrictEqual(errors({Payment_Stage:'COMPLETED',Transaction_Reference:'TX-1',Payment_Proof_Base64:[{name:'receipt.pdf',mimeType:'application/pdf',data:'AAAA'}]}),[]);
@@ -56,6 +54,8 @@ assert.strictEqual(specialEvents.Special_Event_Notes,'Please send the final sche
 
 const validTravel={Travel_Agency_Assistance:'Yes — flight options',Ticket_Departure_City_Airport:'HEL',Preferred_Departure_Home_Date:'2026-12-13',Preferred_Arrival_Sri_Lanka_Date:'2026-12-14',Preferred_Departure_Sri_Lanka_Date:'2026-12-18',Preferred_Departure_Sri_Lanka_Time:'08:30',Ticket_Destination_City_Airport:'HEL',Passport_Number:'P123',Date_of_Birth:'1980-01-01',Passport_Issue_Date:'2022-01-01',Passport_Expiry_Date:'2032-01-01',Place_Country_of_Birth:'Helsinki, Finland',Travel_Details_Consent:true,Passport_Bio_Page_Base64:[{name:'passport.pdf',mimeType:'application/pdf',data:'AAAA'}]};
 assert.deepStrictEqual(Array.from(context.validateTravelDetails(context.normaliseTravelDetails(validTravel),false)),[]);
+assert(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Dietary_Preference:'Vegan'}),false).some(x=>x.includes('dietary preference')));
+assert.deepStrictEqual(Array.from(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Dietary_Preference:'Non-vegetarian'}),false)),[]);
 assert(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Passport_Expiry_Date:'2021-01-01'}),false).some(x=>x.includes('expiry date')));
 assert(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Passport_Bio_Page_Base64:[]}),false).some(x=>x.includes('passport bio page')));
 

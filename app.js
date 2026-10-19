@@ -2,7 +2,7 @@
 
 const extendedStyles = document.createElement('link');
 extendedStyles.rel = 'stylesheet';
-extendedStyles.href = 'extended.css?v=7';
+extendedStyles.href = 'extended.css?v=9';
 document.head.appendChild(extendedStyles);
 
 const CONFIG = Object.freeze({
@@ -13,13 +13,7 @@ const CONFIG = Object.freeze({
   sriLankanEarlyFee: 40000,
   sriLankanLateFee: 50000,
   excursionFeeUsd: 50,
-  crisPaymentUrl: 'https://crisglobal.org/#new2an',
-  paymentLinks: Object.freeze({
-    LK_AUTHOR: 'https://payhere.lk/pay/ob0887ec5',
-    LK_NON_AUTHOR: 'https://payhere.lk/pay/oc78f4e53',
-    GALA_LK_AUTHOR: 'https://payhere.lk/pay/o573053c2',
-    GALA_LK_NON_AUTHOR: 'https://payhere.lk/pay/o20376354'
-  }),
+  crisPaymentUrl: 'https://www.crisglobal.org/#new2an',
   draftKey: 'new2an2026_registration_draft',
   tokenKey: 'new2an2026_admin_token'
 });
@@ -224,6 +218,7 @@ function refreshFee() {
 
 function updateCategoryState() {
   const category=registrationCategory.value;
+  const categoryLabel=registrationCategory.selectedOptions?.[0]?.textContent||'Registration';
   const local=isSriLankanCategory(category);
   const author=isAuthorCategory(category);
   const twoPaperOption=Array.from(paperCount.options).find(option=>option.value==='2');
@@ -234,20 +229,24 @@ function updateCategoryState() {
   const paymentLink=document.getElementById('registration-pay-link');
   const paymentNote=document.getElementById('registration-payment-note');
   const price=currentRegistrationPrice();
-  const directRegistrationUrl=CONFIG.paymentLinks[category];
-  const registrationUrl=directRegistrationUrl||(category?CONFIG.crisPaymentUrl:'');
+  const registrationUrl=category?CONFIG.crisPaymentUrl:'';
   paymentBox.hidden=!category;
-  const checkoutAvailable=registrationUrl&&(price.early||category==='LK_NON_AUTHOR');
+  const checkoutAvailable=!!registrationUrl;
   paymentLink.hidden=!checkoutAvailable;
-  if(checkoutAvailable){paymentLink.href=registrationUrl;paymentLink.textContent=directRegistrationUrl?'Pay registration':'Open the CRIS payment page';paymentNote.textContent=`${price.currency} ${price.amount.toLocaleString('en-GB')}. Keep the payment confirmation and record its reference below.`;}
-  else if(category){paymentLink.hidden=false;paymentLink.href=CONFIG.crisPaymentUrl;paymentLink.textContent='Open the CRIS payment page';paymentNote.textContent=`Registration fee: ${price.currency} ${price.amount.toLocaleString('en-GB')}.`;} 
+  if(checkoutAvailable){
+    paymentLink.href=registrationUrl;
+    paymentLink.textContent='Open official organiser checkout';
+    const caution=category==='LK_AUTHOR'&&!price.early?' Confirm the late-fee amount shown by the organiser before paying.':'';
+    paymentNote.textContent=`Registration fee: ${price.currency} ${price.amount.toLocaleString('en-GB')}. On the CRIS page, choose “${categoryLabel}”, complete its guided checkout, and keep the payment confirmation.${caution}`;
+  }
 
   const galaBox=document.getElementById('gala-box');
   galaBox.hidden=!local;
   const galaFee=category==='LK_AUTHOR'?12000:15000;
-  const galaUrl=category==='LK_AUTHOR'?CONFIG.paymentLinks.GALA_LK_AUTHOR:CONFIG.paymentLinks.GALA_LK_NON_AUTHOR;
   document.getElementById('gala-price').textContent=`LKR ${galaFee.toLocaleString('en-GB')} · separate ticket`;
-  document.getElementById('gala-pay-link').href=galaUrl;
+  document.getElementById('gala-pay-link').href=CONFIG.crisPaymentUrl;
+  const galaNote=document.getElementById('gala-payment-note');
+  if(galaNote)galaNote.textContent=`On the CRIS page, choose Gala Dinner → ${category==='LK_AUTHOR'?'Registering Author':'Non-presenting Attendee'}.`;
   galaBox.querySelectorAll('input,select').forEach(control=>{control.disabled=!local;});
   if(!local){form.elements.Gala_Dinner_Interest.value='No';form.elements.Gala_Dinner_Payment_Reference.value='';}
   if(category&&!author&&Number(paperCount.value)){paperCount.value='0';renderPapers();}

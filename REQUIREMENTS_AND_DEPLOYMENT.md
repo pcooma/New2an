@@ -11,11 +11,11 @@ Source priority for operational rules:
 3. The CRIS organiser page as corroboration of the published Sri Lankan, gala and 3MT amounts.
 4. `NEW2AN Registration Shared.xlsx` as an internal planning sheet. Conflicts in that workbook do not override corroborated organiser or public information.
 
-## Deployment state observed — 14 October 2026
+## Deployment state observed — 19 October 2026
 
-- The repository contains the form/API contract version 5 implementation documented below. The spreadsheet migration remains append-only and preserves earlier columns.
-- `https://pcooma.github.io/New2an/` still serves the earlier frontend (`style.css?v=3` and `app.js?v=8`) and does not yet expose the new category or separate-events workflow.
-- The repository backend now uses `schemaVersion: 5`. The special-event selections and the earlier travel/passport follow-up fields require an Apps Script redeployment before they can be used live. Verify the `/exec` health response reports version 5 after deployment.
+- The repository contains the form/API contract version 6 implementation documented below. The spreadsheet migration remains append-only and preserves earlier columns.
+- `https://pcooma.github.io/New2an/` serves the repository frontend and the Apps Script health response reports `schemaVersion: 6`.
+- On 19 October 2026, all six previously supplied direct PayHere item URLs for local registration, gala dinner and 3MT returned PayHere's merchant error, “This item is not currently available.” The public frontend therefore routes payment buttons to the organiser-maintained CRIS checkout at `https://www.crisglobal.org/#new2an`, where the participant selects the matching category. Do not restore a direct item URL until its complete checkout flow has been retested.
 
 ## Travel and excursion follow-up
 
@@ -64,16 +64,16 @@ The browser and Apps Script backend enforce the same category rules:
 7. The participant returns with the gateway or transfer reference, declared registration amount and currency, and proof. Backend comparison uses the server-calculated amount and currency. A mismatch remains `PROOF_SUBMITTED_AMOUNT_MISMATCH` for manual review.
 8. Payment upload is evidence for review; it is not automatic confirmation.
 
-The official PayHere registration links are:
+The previously supplied direct PayHere registration links are inactive as of 19 October 2026:
 
 - Sri Lankan-affiliated registering author, LKR 40,000: `https://payhere.lk/pay/ob0887ec5`
 - Sri Lankan-affiliated non-presenting attendee, LKR 40,000: `https://payhere.lk/pay/oc78f4e53`
 
-No verified PayHere checkout for the LKR 50,000 Sri Lankan-author late amount was supplied. After the deadline, the interface displays that calculated author fee but withholds the early author link and directs the participant to the organiser. The non-presenting-attendee category retains its published LKR 40,000 link because the official late-surcharge sentence names authors only.
+The participant interface now opens the organiser-maintained CRIS checkout rather than sending participants to these inactive item URLs. No verified direct PayHere checkout for the LKR 50,000 Sri Lankan-author late amount was supplied; after the deadline, the interface tells the participant to confirm the amount shown by the organiser before paying.
 
 ## Gala dinner
 
-The gala dinner is a separate ticket for Sri Lankan-affiliated categories and is excluded from the conference-registration total:
+The gala dinner is a separate ticket for Sri Lankan-affiliated categories and is excluded from the conference-registration total. Its previously supplied direct PayHere links are also inactive as of 19 October 2026, so the interface opens the relevant Gala Dinner option on the organiser-maintained CRIS checkout:
 
 - Registering author: LKR 12,000 — `https://payhere.lk/pay/o573053c2`
 - Non-presenting attendee: LKR 15,000 — `https://payhere.lk/pay/o20376354`
@@ -114,7 +114,7 @@ The panel collects the participant name, international-format reply number and e
 
 The proforma contains verified issuer details, participant or institutional billing identity, category-derived conference fee/currency, paper information, tax wording, payment instructions, due date and document-status warning. It is a pre-payment document, not proof of payment, a tax invoice or a receipt.
 
-Contract version 3 fails closed on invoice configuration. Until an authenticated administrator enters the organiser-verified legal issuer, address, tax wording, contact details, payment/bank instructions and exchange rate and checks the explicit approval confirmation, the API does not expose those stored fields and the browser cannot generate or archive a proforma. Deploying version 3 therefore does not silently legitimise the currently stored version-2 values.
+Since contract version 3, invoice configuration fails closed. Until an authenticated administrator enters the organiser-verified legal issuer, address, tax wording, contact details, payment/bank instructions and exchange rate and checks the explicit approval confirmation, the API does not expose those stored fields and the browser cannot generate or archive a proforma. Deploying the current version therefore does not silently legitimise unverified values.
 
 The gala dinner and excursion appear as separate-pay items and are excluded from `TOTAL DUE NOW`. The excursion is an estimated approximately USD 50 per participant, payable on the excursion day, with an administrator-set indicative USD-to-EUR conversion when selected. It includes transport and evening refreshment; lunch is not included. The final amount and operational details remain subject to organiser confirmation.
 
@@ -124,7 +124,7 @@ The proforma uses the pricing returned by the backend after saving the registrat
 
 1. Copy the updated `google-apps-script/Code.gs` into the Apps Script project.
 2. Preserve Script Properties `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `MAIN_FOLDER_ID` and `EDIT_TOKEN_SECRET`. Never commit private credentials. Treat the existing issuer/payment properties as unverified inputs, not approved values.
-3. Run `setupNEW2AN()` once after deploying. `ensureSchema()` preserves and appends the existing version-2 columns; the health response should then advertise contract version 3.
+3. Run `setupNEW2AN()` once after deploying. `ensureSchema()` preserves existing columns and appends any version-6 additions; the health response should then advertise contract version 6.
 4. Sign in to the administration view and replace every invoice setting with evidence-checked organiser values. Verify the legal issuer name and address, any registration identifier, tax statement, email, telephone, payment/bank instructions, payment period and USD-to-EUR rate. Check the approval confirmation only after that review; this writes `INVOICE_SETTINGS_APPROVED=true`.
 5. If `WORKSHOPS_JSON` already exists, add the completed 11 September `AI-Based Communications Towards 6G` workshop through the admin workshop manager; code defaults do not overwrite stored settings.
 6. Create a new web-app deployment. Execute as the owner and allow access to anyone.
@@ -141,7 +141,7 @@ Use controlled test records and remove or clearly identify them afterward:
 4. Sri Lankan-affiliated non-presenting attendee, no papers, LKR 40,000, LKR 15,000 gala ticket and non-presenting PayHere link.
 5. Confirm a Sri Lankan-affiliated author cannot attach two papers and a non-author cannot attach papers.
 6. Before approval, confirm that public invoice settings are blank and proforma generation/archive is blocked. Then enter evidence-checked settings, explicitly approve them, submit, reload by reference plus email, download two proforma versions, upload proof twice, sign into admin and export Excel.
-7. Confirm the Drive history is preserved, the master sheet contains all version-4 columns, the endpoint reports version 4, category/currency amounts reconcile, and 3MT is absent from the registration dataset and exports.
+7. Confirm the Drive history is preserved, the master sheet contains all version-6 columns, the endpoint reports version 6, category/currency amounts reconcile, and 3MT is absent from the registration dataset and exports.
 8. With a controlled registration that has `Excursion_Interest = Yes` and `Travel_Agency_Assistance = Yes — flight options`, open `excursion.html`, verify the reference/email gate, and submit the organiser-arranged path with a harmless test passport image. Confirm the sheet fields, `Travel Documents` history, `registration.json`, reload marker, and `Air Ticket Requests` export. Confirm that an excursion registration without flight assistance is told that no extra passport data is required. Remove the test identity/document according to the approved test-data procedure.
 9. Confirm invalid or expired edit tokens, wrong emails, cross-reference tokens, invalid PDFs and amount/currency mismatches fail safely.
 10. Confirm the retired participant roles are rejected on new submissions and migrated to `Non-author attendee` only when an old record is reloaded; verify that the three dietary choices are enforced and the excursion is described as approximate with transport and evening refreshment included and lunch excluded.
