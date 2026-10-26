@@ -27,7 +27,7 @@ const ALLOWED_UPLOAD_MIME = ['application/pdf','image/jpeg','image/png','image/w
 const REGISTRATION_CATEGORIES = ['INT_AUTHOR','INT_NON_AUTHOR','LK_AUTHOR','LK_NON_AUTHOR'];
 const PARTICIPANT_ROLES = ['Author / presenting author','Non-author attendee','Industry professional'];
 const DIETARY_PREFERENCES = ['Vegetarian','Non-vegetarian','Halal'];
-const SPECIAL_EVENT_IDS = ['digital-transformation-ai-panel','ieee-comsoc-workshop','ieee-sps-industry-forum','innovation-workshop','global-undergraduate-hackathon'];
+const SPECIAL_EVENT_IDS = ['panel-discussion-01-future-research-ai','panel-discussion-02-ai-public-policy','digital-transformation-ai-panel','ieee-comsoc-workshop','ieee-sps-industry-forum','innovation-workshop','global-undergraduate-hackathon'];
 const LEGACY_PARTICIPANT_ROLES = {'Non-author academic / researcher':'Non-author attendee','Invited or keynote speaker':'Non-author attendee','Committee member / chair':'Non-author attendee'};
 const HEADERS = [
   'Submission_Date','Last_Updated','Reference_ID','Status','Payment_Status',

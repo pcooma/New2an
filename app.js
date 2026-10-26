@@ -2,7 +2,7 @@
 
 const extendedStyles = document.createElement('link');
 extendedStyles.rel = 'stylesheet';
-extendedStyles.href = 'extended.css?v=9';
+extendedStyles.href = 'extended.css?v=10';
 document.head.appendChild(extendedStyles);
 
 const CONFIG = Object.freeze({
@@ -19,7 +19,7 @@ const CONFIG = Object.freeze({
 });
 const REGISTRATION_CATEGORIES = Object.freeze(['INT_AUTHOR','INT_NON_AUTHOR','LK_AUTHOR','LK_NON_AUTHOR']);
 const DIETARY_PREFERENCES = Object.freeze(['Vegetarian','Non-vegetarian','Halal']);
-const SPECIAL_EVENT_IDS = Object.freeze(['digital-transformation-ai-panel','ieee-comsoc-workshop','ieee-sps-industry-forum','innovation-workshop','global-undergraduate-hackathon']);
+const SPECIAL_EVENT_IDS = Object.freeze(['panel-discussion-01-future-research-ai','panel-discussion-02-ai-public-policy','digital-transformation-ai-panel','ieee-comsoc-workshop','ieee-sps-industry-forum','innovation-workshop','global-undergraduate-hackathon']);
 const LEGACY_PARTICIPANT_ROLES = Object.freeze({'Non-author academic / researcher':'Non-author attendee','Invited or keynote speaker':'Non-author attendee','Committee member / chair':'Non-author attendee'});
 const WHATSAPP_CONTACTS = Object.freeze({
   registration:{name:'Oshadhi Gunathilake',number:'94711390292',display:'+94 71 139 0292',role:'Conference Registration'},

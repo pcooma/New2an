@@ -51,6 +51,8 @@ assert.strictEqual(excursion.Excursion_Total_USD,100);
 const specialEvents=context.normaliseRegistration({...base,Special_Event_Selections:'digital-transformation-ai-panel | invalid-event | innovation-workshop',Special_Event_Notes:'Please send the final schedule.'});
 assert.strictEqual(specialEvents.Special_Event_Selections,'digital-transformation-ai-panel | innovation-workshop');
 assert.strictEqual(specialEvents.Special_Event_Notes,'Please send the final schedule.');
+const newPanels=context.normaliseRegistration({...base,Special_Event_Selections:'panel-discussion-01-future-research-ai | panel-discussion-02-ai-public-policy'});
+assert.strictEqual(newPanels.Special_Event_Selections,'panel-discussion-01-future-research-ai | panel-discussion-02-ai-public-policy');
 
 const validTravel={Travel_Agency_Assistance:'Yes — flight options',Ticket_Departure_City_Airport:'HEL',Preferred_Departure_Home_Date:'2026-12-13',Preferred_Arrival_Sri_Lanka_Date:'2026-12-14',Preferred_Departure_Sri_Lanka_Date:'2026-12-18',Preferred_Departure_Sri_Lanka_Time:'08:30',Ticket_Destination_City_Airport:'HEL',Passport_Number:'P123',Date_of_Birth:'1980-01-01',Passport_Issue_Date:'2022-01-01',Passport_Expiry_Date:'2032-01-01',Place_Country_of_Birth:'Helsinki, Finland',Travel_Details_Consent:true,Passport_Bio_Page_Base64:[{name:'passport.pdf',mimeType:'application/pdf',data:'AAAA'}]};
 assert.deepStrictEqual(Array.from(context.validateTravelDetails(context.normaliseTravelDetails(validTravel),false)),[]);
