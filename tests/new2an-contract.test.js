@@ -63,6 +63,9 @@ assert.match(js, /apiUrl:\s*'https:\/\/script\.google\.com\/macros\/s\/AKfycbxW-
 assert.match(js, /function generateProforma/);
 assert.match(js, /function currentRegistrationPrice/);
 assert.match(js, /function saveRegistrationSettings/);
+assert.match(js, /function startFeeRotation/);
+assert.match(js, /setInterval\(\(\)=>\{/);
+assert.match(js, /},5000\)/);
 assert.match(js, /LK_AUTHOR/);
 assert.match(js, /ESTIMATED EXCURSION COST - PAY ON THE EXCURSION DAY/);
 assert.match(js, /saved\.pricing/);

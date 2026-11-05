@@ -2,7 +2,7 @@
 
 const extendedStyles = document.createElement('link');
 extendedStyles.rel = 'stylesheet';
-extendedStyles.href = 'extended.css?v=11';
+extendedStyles.href = 'extended.css?v=12';
 document.head.appendChild(extendedStyles);
 
 const CONFIG = Object.freeze({
@@ -66,6 +66,8 @@ let workshopSettings = [
 ];
 let publicSettings = {registrationOpenDate:CONFIG.registrationOpenDate,earlyDeadline:CONFIG.earlyDeadline,registrationCloseDate:CONFIG.registrationCloseDate,internationalFeeEur:CONFIG.internationalFeeEur,sriLankanEarlyFeeLkr:CONFIG.sriLankanEarlyFeeLkr,sriLankanLateFeeLkr:CONFIG.sriLankanLateFeeLkr,excursionFeeUsd:CONFIG.excursionFeeUsd,usdToEurRate:0,issuerLegalName:'',issuerAddress:'',issuerRegistrationNumber:'',issuerTaxStatement:'',issuerEmail:'',issuerPhone:'',paymentInstructions:'',paymentDueDays:14,termsUrl:'https://new2an.com/terms.html',invoiceSettingsApproved:false};
 let editingWorkshopIndex = -1;
+let feeRotationIndex = 0;
+let feeRotationTimer = null;
 
 function ensureOperationalFields() {
   const participantGrid = document.querySelector('#registration-form .form-section .grid.two');
@@ -199,6 +201,30 @@ function registrationFeeSetting(key, fallback) {
   return Number.isFinite(value)&&value>=0?value:fallback;
 }
 
+function registrationFeeMessages() {
+  const earlyDate=formatRegistrationDate(publicSettings.earlyDeadline||CONFIG.earlyDeadline);
+  return [
+    `International participants: EUR ${registrationFeeSetting('internationalFeeEur',CONFIG.internationalFeeEur).toLocaleString('en-GB')}.`,
+    `Sri Lankan affiliation: LKR ${registrationFeeSetting('sriLankanEarlyFeeLkr',CONFIG.sriLankanEarlyFeeLkr).toLocaleString('en-GB')} through ${earlyDate}; LKR ${registrationFeeSetting('sriLankanLateFeeLkr',CONFIG.sriLankanLateFeeLkr).toLocaleString('en-GB')} afterward.`
+  ];
+}
+
+function startFeeRotation() {
+  if(feeRotationTimer)return;
+  feeRotationTimer=setInterval(()=>{
+    const item=document.getElementById('rotating-registration-fee');
+    if(!item)return;
+    item.classList.add('switching');
+    setTimeout(()=>{
+      feeRotationIndex=(feeRotationIndex+1)%2;
+      const messages=registrationFeeMessages();
+      item.textContent=messages[feeRotationIndex];
+      item.setAttribute('aria-label',messages.join(' '));
+      item.classList.remove('switching');
+    },200);
+  },5000);
+}
+
 function currentRegistrationPrice(now = new Date(), category = registrationCategory?.value) {
   const early = now <= registrationDate(publicSettings.earlyDeadline||CONFIG.earlyDeadline,true);
   const local = isSriLankanCategory(category);
@@ -245,7 +271,9 @@ function updateRegistrationAvailability() {
   const notice=document.getElementById('registration-window-message');
   if(notice){
     const lead=status==='upcoming'?`Registration opens ${openDate}.`:status==='closed'?`Registration closed ${closeDate}.`:`Registration is open until ${closeDate}.`;
-    notice.innerHTML=`<strong>${lead}</strong> International participants: EUR ${registrationFeeSetting('internationalFeeEur',CONFIG.internationalFeeEur).toLocaleString('en-GB')}. Sri Lankan affiliation: LKR ${registrationFeeSetting('sriLankanEarlyFeeLkr',CONFIG.sriLankanEarlyFeeLkr).toLocaleString('en-GB')} through ${earlyDate}; LKR ${registrationFeeSetting('sriLankanLateFeeLkr',CONFIG.sriLankanLateFeeLkr).toLocaleString('en-GB')} afterward.`;
+    const messages=registrationFeeMessages();
+    notice.innerHTML=`<strong>${lead}</strong> <span id="rotating-registration-fee" class="rotating-registration-fee" aria-live="off" aria-label="${messages.join(' ')}">${messages[feeRotationIndex]}</span>`;
+    startFeeRotation();
   }
   const paperNotice=document.getElementById('paper-deadline-message');
   if(paperNotice)paperNotice.innerHTML=`<strong>Authors:</strong> register by ${earlyDate}. One international author registration covers up to two papers by the same presenter; one Sri Lankan author registration covers one paper.`;
