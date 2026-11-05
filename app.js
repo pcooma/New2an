@@ -2,16 +2,17 @@
 
 const extendedStyles = document.createElement('link');
 extendedStyles.rel = 'stylesheet';
-extendedStyles.href = 'extended.css?v=10';
+extendedStyles.href = 'extended.css?v=11';
 document.head.appendChild(extendedStyles);
 
 const CONFIG = Object.freeze({
   apiUrl: 'https://script.google.com/macros/s/AKfycbxW-RbC28FXkOlnrwYU2s4UE-YI7UsauUqTUUKoGunyZgdHGAwgyYug6NIkhEPnqS0J/exec',
-  earlyDeadline: '2026-10-31T23:59:59+05:30',
-  earlyFee: 400,
-  lateFee: 500,
-  sriLankanEarlyFee: 40000,
-  sriLankanLateFee: 50000,
+  registrationOpenDate: '2026-11-05',
+  earlyDeadline: '2026-11-15',
+  registrationCloseDate: '2026-11-25',
+  internationalFeeEur: 400,
+  sriLankanEarlyFeeLkr: 40000,
+  sriLankanLateFeeLkr: 50000,
   excursionFeeUsd: 50,
   crisPaymentUrl: 'https://www.crisglobal.org/#new2an',
   draftKey: 'new2an2026_registration_draft',
@@ -63,7 +64,7 @@ let workshopSettings = [
   {id:'seeing-through-ai-2026',title:'Seeing Through AI: Deep Learning for Computer Vision',date:'2026-07-21',time:'09:30–12:30',venue:'G906, New Building',fee:0,currency:'EUR',status:'completed',contact:'Mr. Amila Karunanayake, +94 77 443 9069'},
   {id:'ai-communications-6g-2026',title:'AI-Based Communications Towards 6G',date:'2026-09-11',time:'11:00 onwards',venue:'SLIIT, Malabe',fee:0,currency:'LKR',status:'completed',contact:'Prof. Dushantha Jayakody, +94 71 402 9161'}
 ];
-let publicSettings = {excursionFeeUsd:CONFIG.excursionFeeUsd,usdToEurRate:0,issuerLegalName:'',issuerAddress:'',issuerRegistrationNumber:'',issuerTaxStatement:'',issuerEmail:'',issuerPhone:'',paymentInstructions:'',paymentDueDays:14,termsUrl:'https://new2an.com/terms.html',invoiceSettingsApproved:false};
+let publicSettings = {registrationOpenDate:CONFIG.registrationOpenDate,earlyDeadline:CONFIG.earlyDeadline,registrationCloseDate:CONFIG.registrationCloseDate,internationalFeeEur:CONFIG.internationalFeeEur,sriLankanEarlyFeeLkr:CONFIG.sriLankanEarlyFeeLkr,sriLankanLateFeeLkr:CONFIG.sriLankanLateFeeLkr,excursionFeeUsd:CONFIG.excursionFeeUsd,usdToEurRate:0,issuerLegalName:'',issuerAddress:'',issuerRegistrationNumber:'',issuerTaxStatement:'',issuerEmail:'',issuerPhone:'',paymentInstructions:'',paymentDueDays:14,termsUrl:'https://new2an.com/terms.html',invoiceSettingsApproved:false};
 let editingWorkshopIndex = -1;
 
 function ensureOperationalFields() {
@@ -179,15 +180,36 @@ function isAuthorCategory(category) {
   return category === 'INT_AUTHOR' || category === 'LK_AUTHOR';
 }
 
+function registrationDate(dateText, endOfDay = false) {
+  return new Date(`${dateText}T${endOfDay?'23:59:59':'00:00:00'}+05:30`);
+}
+
+function formatRegistrationDate(dateText) {
+  return registrationDate(dateText).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'Asia/Colombo'});
+}
+
+function registrationWindowStatus(now = new Date()) {
+  const opens=registrationDate(publicSettings.registrationOpenDate||CONFIG.registrationOpenDate);
+  const closes=registrationDate(publicSettings.registrationCloseDate||CONFIG.registrationCloseDate,true);
+  return now<opens?'upcoming':now>closes?'closed':'open';
+}
+
+function registrationFeeSetting(key, fallback) {
+  const value=Number(publicSettings[key]);
+  return Number.isFinite(value)&&value>=0?value:fallback;
+}
+
 function currentRegistrationPrice(now = new Date(), category = registrationCategory?.value) {
-  const early = now <= new Date(CONFIG.earlyDeadline);
+  const early = now <= registrationDate(publicSettings.earlyDeadline||CONFIG.earlyDeadline,true);
   const local = isSriLankanCategory(category);
-  const sriLankanAuthorLate = category === 'LK_AUTHOR' && !early;
+  const internationalFee=registrationFeeSetting('internationalFeeEur',CONFIG.internationalFeeEur);
+  const localEarlyFee=registrationFeeSetting('sriLankanEarlyFeeLkr',CONFIG.sriLankanEarlyFeeLkr);
+  const localLateFee=registrationFeeSetting('sriLankanLateFeeLkr',CONFIG.sriLankanLateFeeLkr);
   return {
-    amount: local ? (sriLankanAuthorLate ? CONFIG.sriLankanLateFee : CONFIG.sriLankanEarlyFee) : (early ? CONFIG.earlyFee : CONFIG.lateFee),
+    amount: local ? (early ? localEarlyFee : localLateFee) : internationalFee,
     currency: local ? 'LKR' : 'EUR',
     early,
-    feeBasis: local ? (sriLankanAuthorLate ? 'SRI_LANKAN_AUTHOR_LATE_25_PERCENT_SURCHARGE' : 'SRI_LANKAN_AFFILIATION_PUBLISHED_FEE') : (early ? 'INTERNATIONAL_EARLY' : 'INTERNATIONAL_LATE')
+    feeBasis: local ? (early ? 'SRI_LANKAN_EARLY' : 'SRI_LANKAN_LATE_25_PERCENT_SURCHARGE') : 'INTERNATIONAL_STANDARD'
   };
 }
 
@@ -212,8 +234,27 @@ function refreshFee() {
   document.querySelector('#fee-summary strong .summary-currency').textContent = price.currency;
   document.querySelector('#fee-summary strong span:last-child').textContent = price.amount.toLocaleString('en-GB');
   document.getElementById('fee-label').textContent = category ? categoryLabel : 'Select a registration category';
-  document.getElementById('fee-deadline').textContent = price.early ? 'Early fee through 31 October 2026' : 'Late fee after 31 October 2026';
-  document.getElementById('fee-note').textContent = `${isSriLankanCategory(category) ? (category==='LK_AUTHOR'&&!price.early ? 'Includes the published author late surcharge.' : 'Sri Lankan-affiliation published fee.') : 'International author and non-author fee.'} No student rate is published.`;
+  const earlyDate=formatRegistrationDate(publicSettings.earlyDeadline||CONFIG.earlyDeadline);
+  const closeDate=formatRegistrationDate(publicSettings.registrationCloseDate||CONFIG.registrationCloseDate);
+  document.getElementById('fee-deadline').textContent = isSriLankanCategory(category) ? (price.early?`Early fee through ${earlyDate}`:`Late fee after ${earlyDate}`) : `Standard international fee · closes ${closeDate}`;
+  document.getElementById('fee-note').textContent = `${isSriLankanCategory(category) ? (price.early?'Sri Lankan-affiliation early fee.':'Includes the 25% Sri Lankan-affiliation late surcharge.') : 'One international fee applies throughout registration.'} No student rate is published.`;
+  updateRegistrationAvailability();
+}
+
+function updateRegistrationAvailability() {
+  const status=registrationWindowStatus(),openDate=formatRegistrationDate(publicSettings.registrationOpenDate||CONFIG.registrationOpenDate),closeDate=formatRegistrationDate(publicSettings.registrationCloseDate||CONFIG.registrationCloseDate),earlyDate=formatRegistrationDate(publicSettings.earlyDeadline||CONFIG.earlyDeadline);
+  const notice=document.getElementById('registration-window-message');
+  if(notice){
+    const lead=status==='upcoming'?`Registration opens ${openDate}.`:status==='closed'?`Registration closed ${closeDate}.`:`Registration is open until ${closeDate}.`;
+    notice.innerHTML=`<strong>${lead}</strong> The Sri Lankan-affiliation fee is LKR ${registrationFeeSetting('sriLankanEarlyFeeLkr',CONFIG.sriLankanEarlyFeeLkr).toLocaleString('en-GB')} through ${earlyDate} and LKR ${registrationFeeSetting('sriLankanLateFeeLkr',CONFIG.sriLankanLateFeeLkr).toLocaleString('en-GB')} after that.`;
+  }
+  const paperNotice=document.getElementById('paper-deadline-message');
+  if(paperNotice)paperNotice.innerHTML=`<strong>Accepted papers:</strong> at least one full registration is required per accepted paper by ${earlyDate}. One international full registration may cover up to two papers when both are presented by the same registered author. Each Sri Lankan-affiliated author registration covers one paper.`;
+  const locked=status!=='open'&&!currentReferenceId;
+  const submit=document.getElementById('submit-btn');
+  if(submit){submit.disabled=locked;submit.textContent=locked?(status==='upcoming'?'Registration not open yet':'New registration closed'):'Submit';}
+  const invoice=document.getElementById('proforma-btn');
+  if(invoice)invoice.disabled=locked;
 }
 
 function updateCategoryState() {
@@ -236,8 +277,7 @@ function updateCategoryState() {
   if(checkoutAvailable){
     paymentLink.href=registrationUrl;
     paymentLink.textContent='Open official organiser checkout';
-    const caution=category==='LK_AUTHOR'&&!price.early?' Confirm the late-fee amount shown by the organiser before paying.':'';
-    paymentNote.textContent=`Registration fee: ${price.currency} ${price.amount.toLocaleString('en-GB')}. On the CRIS page, choose “${categoryLabel}”, complete its guided checkout, and keep the payment confirmation.${caution}`;
+    paymentNote.textContent=`Registration fee: ${price.currency} ${price.amount.toLocaleString('en-GB')}. On the CRIS page, choose “${categoryLabel}”, complete its guided checkout, and keep the payment confirmation.`;
   }
 
   const galaBox=document.getElementById('gala-box');
@@ -285,7 +325,7 @@ function toObject(targetForm) {
     data.Billing_Address=data.Country_of_Residence||'';
     data.Purchase_Order='';data.Additional_Info='';
   }
-  data.Form_Schema_Version = 6;
+  data.Form_Schema_Version = 7;
   data.Special_Event_Selections = Array.from(document.querySelectorAll('.special-event-choice:checked')).map(el => el.value).filter(id=>SPECIAL_EVENT_IDS.includes(id)).join(' | ');
   data.Workshop_Selections = Array.from(document.querySelectorAll('.future-workshop-choice:checked')).map(el => el.value).join(' | ');
   if (currentReferenceId) data.Reference_ID = currentReferenceId;
@@ -328,6 +368,7 @@ async function api(payload, query = '') {
 form.addEventListener('submit', async event => {
   event.preventDefault();
   setMessage('');
+  if(registrationWindowStatus()!=='open'&&!currentReferenceId){setMessage(`New registrations are accepted only from ${formatRegistrationDate(publicSettings.registrationOpenDate||CONFIG.registrationOpenDate)} through ${formatRegistrationDate(publicSettings.registrationCloseDate||CONFIG.registrationCloseDate)}.`, 'error');return;}
   if (!form.reportValidity()) { setMessage('Please complete the highlighted required fields.', 'error'); return; }
   const data = toObject(form);
   const issue = validateBusinessRules(data);
@@ -350,7 +391,7 @@ form.addEventListener('submit', async event => {
     const travelLink=data.Payment_Stage==='COMPLETED'?' You can now complete post-registration travel and excursion details from the Travel tab.':'';
     setMessage(`Registration saved. Your reference is ${result.referenceId}.${travelLink}`, 'success');
   } catch (error) { setMessage(error.name === 'AbortError' ? 'The server took too long to respond. Please retry; your draft is preserved.' : error.message, 'error'); }
-  finally { button.disabled = false; button.textContent = 'Submit'; }
+  finally { button.disabled = false; button.textContent = 'Submit'; updateRegistrationAvailability(); }
 });
 
 let draftTimer;
@@ -445,6 +486,7 @@ async function loadWorkshopSettings(){
   if(!CONFIG.apiUrl){renderWorkshopChoices();renderWorkshopAdmin();return;}
   try{const result=await api(null,'?action=getWorkshops');workshopSettings=result.workshops||workshopSettings;publicSettings={...publicSettings,...(result.publicSettings||{}),invoiceSettingsApproved:result.publicSettings?.invoiceSettingsApproved===true};}catch(_){}
   updateExcursionPricingText();
+  refreshFee();
   renderWorkshopChoices();renderWorkshopAdmin();
 }
 
@@ -452,7 +494,17 @@ function ensureWorkshopAdmin(){
   const panel=document.getElementById('admin-panel');
   if(document.getElementById('workshop-admin'))return;
   const section=document.createElement('section');section.id='workshop-admin';section.className='workshop-admin';
-  section.innerHTML=`<div class="section-heading"><span>I</span><div><h3>Invoice issuer and payment settings</h3><p>Use verified legal details. These values appear on organization-facing payment invoices.</p></div></div>
+  section.innerHTML=`<div class="section-heading"><span>R</span><div><h3>Registration dates and fees</h3><p>Changes saved here control the public registration page and the authoritative fee recorded by the backend.</p></div></div>
+    <div class="grid two">
+      <label>Registration opens<input id="registration-open-date" type="date" required></label>
+      <label>Early registration deadline<input id="registration-early-deadline" type="date" required></label>
+      <label>Registration closes<input id="registration-close-date" type="date" required></label>
+      <label>International fee (EUR)<input id="registration-international-fee" type="number" min="0" step="0.01" required></label>
+      <label>Sri Lankan early fee (LKR)<input id="registration-local-early-fee" type="number" min="0" step="1" required></label>
+      <label>Sri Lankan late fee (LKR)<input id="registration-local-late-fee" type="number" min="0" step="1" required></label>
+    </div>
+    <div class="admin-actions"><button type="button" id="registration-settings-save" class="btn primary">Save registration settings</button></div><p id="registration-settings-message" class="form-message"></p>
+    <div class="section-heading"><span>I</span><div><h3>Invoice issuer and payment settings</h3><p>Use verified legal details. These values appear on organization-facing payment invoices.</p></div></div>
     <div class="grid two">
       <label>Issuer legal name<input id="invoice-issuer-name" required></label>
       <label>Issuer email<input id="invoice-issuer-email" type="email" required></label>
@@ -472,7 +524,22 @@ function ensureWorkshopAdmin(){
   document.getElementById('ws-add').addEventListener('click',upsertWorkshopDraft);
   document.getElementById('ws-save').addEventListener('click',saveWorkshopSettings);
   document.getElementById('currency-save').addEventListener('click',savePublicSettings);
+  document.getElementById('registration-settings-save').addEventListener('click',saveRegistrationSettings);
   document.getElementById('workshop-admin-list').addEventListener('click',event=>{const index=Number(event.target.dataset.edit);if(Number.isInteger(index))editWorkshop(index);});
+}
+
+async function saveRegistrationSettings(){
+  const box=document.getElementById('registration-settings-message'),value=id=>document.getElementById(id).value.trim();
+  const payload={action:'saveRegistrationSettings',token:adminToken,registrationOpenDate:value('registration-open-date'),earlyDeadline:value('registration-early-deadline'),registrationCloseDate:value('registration-close-date'),internationalFeeEur:Number(value('registration-international-fee')),sriLankanEarlyFeeLkr:Number(value('registration-local-early-fee')),sriLankanLateFeeLkr:Number(value('registration-local-late-fee'))};
+  if(!payload.registrationOpenDate||!payload.earlyDeadline||!payload.registrationCloseDate||![payload.internationalFeeEur,payload.sriLankanEarlyFeeLkr,payload.sriLankanLateFeeLkr].every(amount=>Number.isFinite(amount)&&amount>=0)){box.textContent='Complete all registration dates and fees.';box.className='form-message error';return;}
+  if(payload.registrationOpenDate>payload.earlyDeadline||payload.earlyDeadline>payload.registrationCloseDate){box.textContent='Dates must be ordered: opening date, early deadline, then closing date.';box.className='form-message error';return;}
+  try{const result=await api(payload);publicSettings={...publicSettings,...result.publicSettings};renderRegistrationAdminSettings();refreshFee();updateCategoryState();box.textContent='Registration dates and fees saved.';box.className='form-message success';}
+  catch(error){box.textContent=error.message;box.className='form-message error';}
+}
+
+function renderRegistrationAdminSettings(){
+  const fields={'registration-open-date':publicSettings.registrationOpenDate,'registration-early-deadline':publicSettings.earlyDeadline,'registration-close-date':publicSettings.registrationCloseDate,'registration-international-fee':publicSettings.internationalFeeEur,'registration-local-early-fee':publicSettings.sriLankanEarlyFeeLkr,'registration-local-late-fee':publicSettings.sriLankanLateFeeLkr};
+  Object.entries(fields).forEach(([id,value])=>{const input=document.getElementById(id);if(input&&document.activeElement!==input)input.value=value??'';});
 }
 
 async function savePublicSettings(){
@@ -499,6 +566,7 @@ function renderInvoiceAdminSettings(){
 
 function renderWorkshopAdmin(){
   ensureWorkshopAdmin();
+  renderRegistrationAdminSettings();
   renderInvoiceAdminSettings();
   document.getElementById('workshop-admin-list').innerHTML=workshopSettings.map((w,i)=>`<div class="admin-workshop-row"><div><strong>${escapeHtml(w.title)}</strong><span>${escapeHtml(w.date)} · ${escapeHtml(w.status)} · ${Number(w.fee)===0?'Free':`${escapeHtml(w.currency)} ${Number(w.fee).toFixed(2)}`}</span></div><button type="button" class="btn secondary" data-edit="${i}">Edit</button></div>`).join('');
 }
@@ -549,6 +617,7 @@ document.getElementById('gala-payment-proof').addEventListener('change',event=>{
 document.getElementById('proforma-btn').addEventListener('click', generateProforma);
 
 async function generateProforma() {
+  if(registrationWindowStatus()!=='open'&&!currentReferenceId){setMessage(`New registrations are accepted only from ${formatRegistrationDate(publicSettings.registrationOpenDate||CONFIG.registrationOpenDate)} through ${formatRegistrationDate(publicSettings.registrationCloseDate||CONFIG.registrationCloseDate)}.`, 'error');return;}
   const institutional=form.elements.Bill_To.value==='Institution / organisation';
   const required = ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Registration_Category','Attendance_Mode','Bill_To'].concat(institutional?['Billing_Legal_Name','Billing_Email','Billing_Address']:[]);
   const missing = required.map(name => form.elements[name]).find(el => !el || !String(el.value).trim());
@@ -600,7 +669,7 @@ async function generateProforma() {
     const count=Number(data.Excursion_Participant_Count||1),fee=Number(data.Excursion_Fee_Per_Person_USD),usdTotal=Number(data.Excursion_Total_USD),rate=Number(data.Excursion_USD_to_EUR_Rate),eurTotal=Number(data.Excursion_Total_EUR_Indicative);
     doc.setFillColor(239,246,248);doc.roundedRect(left,y,width,28,1.5,1.5,'F');doc.setFontSize(8);doc.setFont('helvetica','bold');doc.setTextColor(...navy);doc.text('ESTIMATED EXCURSION COST - PAY ON THE EXCURSION DAY',left+4,y+5);doc.setFontSize(6);doc.setTextColor(...muted);doc.text('PARTICIPANTS',left+4,y+11);doc.text('EST. PRICE / PERSON',left+43,y+11);doc.text('EST. USD TOTAL',left+89,y+11);doc.text('INDICATIVE EUR',left+129,y+11);doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...ink);doc.text(String(count),left+4,y+15.5);doc.text(`USD ${fee.toFixed(2)}`,left+43,y+15.5);doc.text(`USD ${usdTotal.toFixed(2)}`,left+89,y+15.5);doc.text(`EUR ${eurTotal.toFixed(2)}`,left+129,y+15.5);doc.setFont('helvetica','normal');doc.setFontSize(6.2);doc.setTextColor(...muted);doc.text(`1 USD = EUR ${rate.toFixed(4)}. Approximate only; separate from registration and not due now.`,left+4,y+21);doc.text('Includes transport and evening refreshment. Lunch is not included.',left+4,y+24.5);y+=32;
   }
-  const sriLankanCheckout=isSriLankanCategory(data.Registration_Category)&&price.feeBasis!=='SRI_LANKAN_AUTHOR_LATE_25_PERCENT_SURCHARGE';
+  const sriLankanCheckout=isSriLankanCategory(data.Registration_Category);
   const paymentInstructions=sriLankanCheckout?'Use the category-specific official CRIS PayHere link shown in the registration portal. Keep the gateway receipt.':publicSettings.paymentInstructions;
   doc.setDrawColor(...rule);doc.line(left,y,right,y);y+=5;doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(...navy);doc.text('Tax and payment',left,y);y+=4;doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text('TAX TREATMENT',left,y);doc.text('PAYMENT INSTRUCTIONS',107,y);y+=3.5;doc.setFont('helvetica','normal');doc.setFontSize(6.8);doc.setTextColor(...ink);doc.text(fit(publicSettings.issuerTaxStatement,84,3),left,y);doc.text(fit(paymentInstructions,89,3),107,y);y+=12;doc.setFont('helvetica','bold');doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text('PAYMENT REFERENCE',left,y);doc.text('TERMS',107,y);doc.setFont('helvetica','normal');doc.setFontSize(6.8);doc.setTextColor(...ink);doc.text(currentReferenceId,left,y+3.5);doc.text(fit(publicSettings.termsUrl,89,1),107,y+3.5);
   doc.setDrawColor(220);doc.line(left,281,right,281);doc.setFontSize(6.5);doc.setTextColor(...muted);doc.text(`System generated | ${publicSettings.issuerEmail}`,left,286);doc.text('Page 1 of 1',right,286,{align:'right'});

@@ -4,9 +4,13 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 const code = fs.readFileSync(path.resolve(__dirname,'../google-apps-script/Code.gs'),'utf8');
-const context = {console};
+const scriptProperties={getProperty(){return null;}};
+const context = {console,PropertiesService:{getScriptProperties(){return scriptProperties;}}};
 vm.createContext(context);
 vm.runInContext(code,context);
+
+const defaultRegistrationSettings=JSON.parse(JSON.stringify(context.readRegistrationSettings()));
+assert.deepStrictEqual(defaultRegistrationSettings,{registrationOpenDate:'2026-11-05',earlyDeadline:'2026-11-15',registrationCloseDate:'2026-11-25',internationalFeeEur:400,sriLankanEarlyFeeLkr:40000,sriLankanLateFeeLkr:50000});
 
 const base = {
   Title:'Prof.',Full_Name:'A. Author',Email:'author@example.org',Phone:'+358400000000',
@@ -39,12 +43,19 @@ assert(errors({Payment_Stage:'COMPLETED',Transaction_Reference:'',Payment_Proof_
 assert.deepStrictEqual(errors({Payment_Stage:'COMPLETED',Transaction_Reference:'TX-1',Payment_Proof_Base64:[{name:'receipt.pdf',mimeType:'application/pdf',data:'AAAA'}]}),[]);
 assert(errors({Payment_Stage:'COMPLETED',Transaction_Reference:'TX-1',Payment_Proof_Base64:[{name:'bad.exe',mimeType:'application/octet-stream',data:'AAAA'}]}).some(x=>x.includes('PDF')));
 assert(errors({Registration_Category:'LK_NON_AUTHOR',Paper_Count:0,Payment_Stage:'COMPLETED',Transaction_Reference:'TX-2',Payment_Proof_Base64:[{name:'receipt.pdf',mimeType:'application/pdf',data:'AAAA'}],Gala_Dinner_Interest:'Yes'}).some(x=>x.includes('Gala dinner payment reference')));
-assert.strictEqual(context.feeFor(new Date('2026-10-31T18:00:00Z')),400);
-assert.strictEqual(context.feeFor(new Date('2026-11-01T18:00:00Z')),500);
-assert.strictEqual(context.feeFor(new Date('2026-10-31T18:00:00Z'),'LK_AUTHOR'),40000);
-assert.strictEqual(context.feeFor(new Date('2026-11-01T18:00:00Z'),'LK_AUTHOR'),50000);
-assert.strictEqual(context.feeFor(new Date('2026-11-01T18:00:00Z'),'LK_NON_AUTHOR'),40000);
-assert.strictEqual(context.registrationPriceFor(new Date('2026-10-31T18:00:00Z'),'LK_AUTHOR').currency,'LKR');
+assert.strictEqual(context.feeFor(new Date('2026-11-15T18:29:59Z')),400);
+assert.strictEqual(context.feeFor(new Date('2026-11-15T18:30:00Z')),400);
+assert.strictEqual(context.feeFor(new Date('2026-11-15T18:29:59Z'),'LK_AUTHOR'),40000);
+assert.strictEqual(context.feeFor(new Date('2026-11-15T18:30:00Z'),'LK_AUTHOR'),50000);
+assert.strictEqual(context.feeFor(new Date('2026-11-15T18:30:00Z'),'LK_NON_AUTHOR'),50000);
+assert.strictEqual(context.registrationPriceFor(new Date('2026-11-15T18:29:59Z'),'LK_AUTHOR').currency,'LKR');
+assert.strictEqual(context.registrationWindowStatusFor(new Date('2026-11-04T18:29:59Z')),'upcoming');
+assert.strictEqual(context.registrationWindowStatusFor(new Date('2026-11-04T18:30:00Z')),'open');
+assert.strictEqual(context.registrationWindowStatusFor(new Date('2026-11-25T18:29:59Z')),'open');
+assert.strictEqual(context.registrationWindowStatusFor(new Date('2026-11-25T18:30:00Z')),'closed');
+const customRegistrationSettings={registrationOpenDate:'2026-11-06',earlyDeadline:'2026-11-16',registrationCloseDate:'2026-11-26',internationalFeeEur:450,sriLankanEarlyFeeLkr:41000,sriLankanLateFeeLkr:51250};
+assert.strictEqual(context.registrationPriceFor(new Date('2026-11-16T18:29:59Z'),'INT_AUTHOR',customRegistrationSettings).amount,450);
+assert.strictEqual(context.registrationPriceFor(new Date('2026-11-16T18:30:00Z'),'LK_NON_AUTHOR',customRegistrationSettings).amount,51250);
 const excursion = context.normaliseRegistration({...base,Excursion_Interest:'Yes',Excursion_Participant_Count:2,Excursion_Acknowledgement:true,Excursion_Participant_Names:'Guest'});
 assert.strictEqual(excursion.Excursion_Fee_Per_Person_USD,50);
 assert.strictEqual(excursion.Excursion_Total_USD,100);

@@ -31,16 +31,17 @@ The revised frontend and backend are therefore complete in the repository but ar
 Confirmed conference contract:
 
 - NEW2AN 2026 is in Colombo from 15–17 December 2026.
-- International author and non-author registration is EUR 400 on or before 31 October 2026 and EUR 500 afterward.
-- Sri Lankan-affiliated author and non-presenting-attendee registration is LKR 40,000. The official page applies a 25% late surcharge specifically to Sri Lanka-based authors after 31 October, so the system calculates LKR 50,000 for that author category while retaining the published LKR 40,000 non-presenting-attendee fee.
+- Registration opens on 5 November 2026 and closes at the end of 25 November 2026.
+- International author and non-author registration is EUR 400 throughout the registration period; the former EUR 500 late tier is not used.
+- Sri Lankan-affiliated author and non-presenting-attendee registration is LKR 40,000 through 15 November 2026 and LKR 50,000 from 16 November 2026, applying the requested 25% late surcharge to both Sri Lankan-affiliation categories.
 - An international full registration may cover up to two accepted papers when the same registered author presents both. Each Sri Lankan-affiliated author registration covers one paper.
-- At least one full author registration per accepted paper is required by 31 October 2026.
+- At least one full author registration per accepted paper is required by 15 November 2026.
 - Online presentation may be requested only by international authors, requires case-by-case approval, and must be requested by 15 November 2026 through `new2an@crisglobal.org`.
 - Author registration transfers requested after 15 November 2026 incur a EUR 50 penalty. Transfer processing is an organiser workflow and is not automated by this form.
 - The published full-registration benefits are online access to conference sessions and a digital Springer LNCS proceedings copy.
 - Registration fees are generally non-refundable.
 
-The official dates page now lists full-paper submission on 30 September 2026, notification on 15 October 2026, and camera-ready submission on 25 October 2026. The registration page also states that author registration must be completed before camera-ready submission while separately naming 31 October as the author-registration deadline. The participant interface flags this sequence for confirmation instead of inventing a resolution.
+The organiser's 3 November 2026 instruction supersedes the former registration dates and fees: registration opens 5 November, the early deadline is 15 November, and registration closes 25 November. The admin dashboard stores these dates and the three fee values in Apps Script properties so authorised organisers can update them without editing the website source.
 
 ## Separate activities
 
@@ -152,7 +153,7 @@ Use controlled test records and remove or clearly identify them afterward:
 
 - Exact Colombo venue, final technical programme, hotel inventory/rates, travel partner, airport-transfer service, final excursion price and excursion itinerary.
 - A verified international EUR checkout link and a Sri Lankan late-fee PayHere link.
-- The authoritative sequence between camera-ready submission on 25 October and author registration by 31 October.
+- Any future change to the registration window or fees must be saved in the admin dashboard and verified against the public page and backend response.
 - Registration or submission routes for the Industry Forum and Excellence Award.
 - The live hackathon registration link promised by the official hackathon page.
 - Production persistence and payment reconciliation until the controlled live acceptance test passes.

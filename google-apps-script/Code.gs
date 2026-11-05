@@ -19,8 +19,8 @@ const INVOICES_FOLDER = 'Invoices';
 const PAYMENT_PROOFS_FOLDER = 'Payment Proofs';
 const GALA_PAYMENT_PROOFS_FOLDER = 'Gala Dinner Payment Proofs';
 const TRAVEL_DOCUMENTS_FOLDER = 'Travel Documents';
-const EARLY_DEADLINE = new Date('2026-10-31T23:59:59+05:30');
-const SCHEMA_VERSION = 6;
+const REGISTRATION_DEFAULTS = Object.freeze({registrationOpenDate:'2026-11-05',earlyDeadline:'2026-11-15',registrationCloseDate:'2026-11-25',internationalFeeEur:400,sriLankanEarlyFeeLkr:40000,sriLankanLateFeeLkr:50000});
+const SCHEMA_VERSION = 7;
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 const EXCURSION_FEE_USD = 50;
 const ALLOWED_UPLOAD_MIME = ['application/pdf','image/jpeg','image/png','image/webp'];
@@ -72,6 +72,7 @@ function doPost(e) {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     if (body.action === 'adminLogin') return adminLogin(body);
     if (body.action === 'saveWorkshops') return saveWorkshops(body);
+    if (body.action === 'saveRegistrationSettings') return saveRegistrationSettings(body);
     if (body.action === 'savePublicSettings') return savePublicSettings(body);
     if (body.action === 'saveInvoiceVersion') return saveInvoiceVersion(body);
     if (body.action === 'submitTravelDetails') return saveTravelDetails(body.data || {},body.editToken);
@@ -89,8 +90,10 @@ function saveRegistration(input,editToken) {
   const resources = getResources();
   const sheet = resources.sheet;
   const now = new Date();
-  const price = registrationPriceFor(now,data.Registration_Category);
   const existing = data.Reference_ID ? findRow(sheet,data.Reference_ID,'') : {};
+  const registrationSettings=readRegistrationSettings();
+  if(!data.Reference_ID&&registrationWindowStatusFor(now,registrationSettings)!=='open')return json({success:false,error:'New registrations are accepted only from '+registrationSettings.registrationOpenDate+' through '+registrationSettings.registrationCloseDate+'.'});
+  const price = registrationPriceFor(now,data.Registration_Category,registrationSettings);
   if(data.Reference_ID&&(!existing.rowNumber||existing.email.toLowerCase()!==data.Email||!verifyEditToken(editToken,data.Reference_ID,data.Email)))return json({success:false,error:'This registration cannot be updated without a valid reference-and-email session. Reload it using the returning-registration form.'});
   const referenceId = existing.referenceId || makeReferenceId();
   data.Reference_ID = referenceId;
@@ -294,7 +297,7 @@ function saveWorkshops(body){
 
 function readPublicSettings(){
   const props=PropertiesService.getScriptProperties(),stored=Number(props.getProperty('USD_TO_EUR_RATE')),approved=props.getProperty('INVOICE_SETTINGS_APPROVED')==='true';
-  return {
+  return Object.assign(readRegistrationSettings(props),{
     excursionFeeUsd:EXCURSION_FEE_USD,
     usdToEurRate:approved&&stored>0?stored:0,
     issuerLegalName:approved?clean(props.getProperty('INVOICE_ISSUER_LEGAL_NAME'),300):'',
@@ -307,7 +310,23 @@ function readPublicSettings(){
     paymentDueDays:Math.max(1,Math.min(90,parseInt(props.getProperty('INVOICE_PAYMENT_DUE_DAYS'),10)||14)),
     termsUrl:clean(props.getProperty('INVOICE_TERMS_URL'),500)||'https://new2an.com/terms.html',
     invoiceSettingsApproved:approved
-  };
+  });
+}
+
+function readRegistrationSettings(properties){
+  const props=properties||PropertiesService.getScriptProperties(),date=function(key,fallback){const value=clean(props.getProperty(key),10);return /^\d{4}-\d{2}-\d{2}$/.test(value)?value:fallback;},money=function(key,fallback){const raw=props.getProperty(key),value=Number(raw);return raw!==null&&raw!==''&&Number.isFinite(value)&&value>=0?value:fallback;};
+  return {registrationOpenDate:date('REGISTRATION_OPEN_DATE',REGISTRATION_DEFAULTS.registrationOpenDate),earlyDeadline:date('REGISTRATION_EARLY_DEADLINE',REGISTRATION_DEFAULTS.earlyDeadline),registrationCloseDate:date('REGISTRATION_CLOSE_DATE',REGISTRATION_DEFAULTS.registrationCloseDate),internationalFeeEur:money('REGISTRATION_INTERNATIONAL_FEE_EUR',REGISTRATION_DEFAULTS.internationalFeeEur),sriLankanEarlyFeeLkr:money('REGISTRATION_SRI_LANKAN_EARLY_FEE_LKR',REGISTRATION_DEFAULTS.sriLankanEarlyFeeLkr),sriLankanLateFeeLkr:money('REGISTRATION_SRI_LANKAN_LATE_FEE_LKR',REGISTRATION_DEFAULTS.sriLankanLateFeeLkr)};
+}
+
+function saveRegistrationSettings(body){
+  if(!validToken(body.token))return json({success:false,error:'Unauthorized.'});
+  const datePattern=/^\d{4}-\d{2}-\d{2}$/,openDate=clean(body.registrationOpenDate,10),earlyDeadline=clean(body.earlyDeadline,10),closeDate=clean(body.registrationCloseDate,10),internationalFee=Number(body.internationalFeeEur),localEarlyFee=Number(body.sriLankanEarlyFeeLkr),localLateFee=Number(body.sriLankanLateFeeLkr);
+  if(!datePattern.test(openDate)||!datePattern.test(earlyDeadline)||!datePattern.test(closeDate))return json({success:false,error:'Enter valid registration dates.'});
+  if(openDate>earlyDeadline||earlyDeadline>closeDate)return json({success:false,error:'Dates must be ordered: opening date, early deadline, then closing date.'});
+  if(![internationalFee,localEarlyFee,localLateFee].every(function(amount){return Number.isFinite(amount)&&amount>=0&&amount<=10000000;}))return json({success:false,error:'Enter valid non-negative registration fees.'});
+  const props=PropertiesService.getScriptProperties();
+  props.setProperties({REGISTRATION_OPEN_DATE:openDate,REGISTRATION_EARLY_DEADLINE:earlyDeadline,REGISTRATION_CLOSE_DATE:closeDate,REGISTRATION_INTERNATIONAL_FEE_EUR:String(roundMoney(internationalFee)),REGISTRATION_SRI_LANKAN_EARLY_FEE_LKR:String(roundMoney(localEarlyFee)),REGISTRATION_SRI_LANKAN_LATE_FEE_LKR:String(roundMoney(localLateFee))});
+  return json({success:true,publicSettings:readPublicSettings()});
 }
 
 function savePublicSettings(body){
@@ -494,12 +513,14 @@ function saveRecordFile(registrationFolder,data) {
   return registrationFolder.createFile(name,body,MimeType.PLAIN_TEXT).getUrl();
 }
 
-function registrationPriceFor(date,category){
-  const early=date<=EARLY_DEADLINE,local=String(category||'').indexOf('LK_')===0,sriLankanAuthorLate=category==='LK_AUTHOR'&&!early;
+function registrationBoundary(dateText,endOfDay){return new Date(dateText+'T'+(endOfDay?'23:59:59':'00:00:00')+'+05:30');}
+function registrationWindowStatusFor(date,settings){const rules=settings||REGISTRATION_DEFAULTS;return date<registrationBoundary(rules.registrationOpenDate,false)?'upcoming':date>registrationBoundary(rules.registrationCloseDate,true)?'closed':'open';}
+function registrationPriceFor(date,category,settings){
+  const rules=settings||REGISTRATION_DEFAULTS,early=date<=registrationBoundary(rules.earlyDeadline,true),local=String(category||'').indexOf('LK_')===0;
   return {
-    amount:local?(sriLankanAuthorLate?50000:40000):(early?400:500),
+    amount:local?(early?Number(rules.sriLankanEarlyFeeLkr):Number(rules.sriLankanLateFeeLkr)):Number(rules.internationalFeeEur),
     currency:local?'LKR':'EUR',
-    feeBasis:local?(sriLankanAuthorLate?'SRI_LANKAN_AUTHOR_LATE_25_PERCENT_SURCHARGE':'SRI_LANKAN_AFFILIATION_PUBLISHED_FEE'):(early?'INTERNATIONAL_EARLY':'INTERNATIONAL_LATE')
+    feeBasis:local?(early?'SRI_LANKAN_EARLY':'SRI_LANKAN_LATE_25_PERCENT_SURCHARGE'):'INTERNATIONAL_STANDARD'
   };
 }
 function feeFor(date,category){return registrationPriceFor(date,category||'INT_AUTHOR').amount;}
