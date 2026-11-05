@@ -32,3 +32,44 @@ label:not(.check)>input,label:not(.check)>select,label:not(.check)>textarea{disp
 .btn{min-height:44px}
 :root{--muted:#637078}
 .whatsapp-fab,.whatsapp-send{background:#128044}.whatsapp-fab:hover,.whatsapp-send:hover{background:#0c7440}
+
+/* Keep the clear, single-column registration view on wide computer screens.
+   The page behaves like a centred conference app instead of stretching across
+   the full browser window. */
+@media(min-width:801px){
+  html{background:#dfe6e8}
+  body{position:relative;max-width:640px;min-height:100vh;margin-inline:auto;box-shadow:0 0 48px rgba(9,35,60,.16)}
+  .hero{height:260px}
+  .hero-copy h1{font-size:2.25rem}
+  .topbar{height:auto;min-height:60px;align-items:center;gap:4px;flex-wrap:wrap;padding:7px 18px}
+  .topbar>div{width:100%;gap:2px;justify-content:flex-start}
+  .nav-link{padding:8px 9px}
+  .intro{grid-template-columns:1fr;gap:20px;padding-top:45px}
+  .intro h2{font-size:2rem}
+  .lookup-card,.grid.two,.grid.four,.support-grid,.event-grid,.event-price{grid-template-columns:1fr}
+  .span-2,.span-3{grid-column:auto}
+  .form-section{padding:30px 20px}
+  .progress span{font-size:0;padding:12px}
+  .progress span:before{content:counter(progress);font-size:.8rem}
+  .progress{counter-reset:progress}
+  .progress span{counter-increment:progress}
+  .metrics{grid-template-columns:repeat(2,1fr)}
+  .dashboard-head,footer,.proforma-box,.official-payment,.admin-workshop-row,.admin-actions{align-items:stretch;flex-direction:column}
+  .proforma-box .btn,.official-payment .btn{width:100%;text-align:center}
+  .event-flyer-grid{grid-template-columns:1fr}
+  .event-flyer:last-child:nth-child(odd){grid-column:auto}
+  .workshop-admin{padding:20px 15px}
+  .future-events{padding:14px}
+  .whatsapp-support{right:calc((100vw - 640px)/2 + 18px)}
+  .travel-page .topbar{height:auto;min-height:60px;align-items:center;gap:4px;flex-wrap:wrap;padding:7px 18px}
+  .travel-page .topbar>div{width:100%;display:flex;gap:2px;justify-content:flex-start}
+  .travel-page .nav-link{padding:8px 9px}
+  .travel-hero-inner{min-height:250px;align-items:flex-start;flex-direction:column;justify-content:center}
+  .travel-hero h1{font-size:2.6rem}
+  .travel-step{min-width:0;width:100%}
+  .travel-intro,.travel-lookup{grid-template-columns:1fr}
+  .travel-intro{gap:22px}
+  .travel-intro h2{font-size:2rem}
+  .record-banner{grid-template-columns:repeat(2,1fr)}
+  .identity-source{align-items:flex-start;flex-direction:column}
+}

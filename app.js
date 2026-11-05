@@ -2,7 +2,7 @@
 
 const extendedStyles = document.createElement('link');
 extendedStyles.rel = 'stylesheet';
-extendedStyles.href = 'extended.css?v=13';
+extendedStyles.href = 'extended.css?v=14';
 document.head.appendChild(extendedStyles);
 
 const CONFIG = Object.freeze({

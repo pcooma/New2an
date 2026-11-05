@@ -5,11 +5,15 @@ const path = require('path');
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const js = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+const extendedCss = fs.readFileSync(path.join(root, 'extended.css'), 'utf8');
 const gas = fs.readFileSync(path.join(root, 'google-apps-script/Code.gs'), 'utf8');
 const travelHtml = fs.readFileSync(path.join(root, 'excursion.html'), 'utf8');
 const travelJs = fs.readFileSync(path.join(root, 'excursion.js'), 'utf8');
 
 assert.match(html, /NEW2AN 2026/);
+assert.match(extendedCss, /@media\(min-width:801px\)/);
+assert.match(extendedCss, /max-width:640px/);
+assert.match(extendedCss, /\.intro\{grid-template-columns:1fr/);
 assert.match(html, /15–17 December 2026/);
 assert.match(html, /5–25 November 2026/);
 assert.match(html, /LKR 40,000 through 15 November/);
