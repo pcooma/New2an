@@ -2,7 +2,7 @@
 
 const extendedStyles = document.createElement('link');
 extendedStyles.rel = 'stylesheet';
-extendedStyles.href = 'extended.css?v=12';
+extendedStyles.href = 'extended.css?v=13';
 document.head.appendChild(extendedStyles);
 
 const CONFIG = Object.freeze({
@@ -498,6 +498,22 @@ function renderGalaProofList(){
   box.textContent=galaProofFile?`${galaProofFile.name} (${(galaProofFile.size/1024/1024).toFixed(2)} MB)`:(galaProofPreviouslyUploaded?'Previously uploaded file will be retained.':'No file selected.');
 }
 
+function formatEventDetails(event) {
+  const date=String(event.date||'').trim();
+  const time=String(event.time||'').trim();
+  const venue=String(event.venue||'').trim();
+  if(!date&&!time&&!venue)return 'Schedule to be announced';
+  const details=[];
+  if(date)details.push(date);
+  if(time)details.push(time);
+  if(venue)details.push(venue);
+  if(!time&&!venue)details.push('Time and venue to be announced');
+  else if(!time)details.push('Time to be announced');
+  else if(!venue)details.push('Venue to be announced');
+  else if(!date)details.push('Date to be announced');
+  return details.join(' · ');
+}
+
 function renderWorkshopChoices() {
   const host=document.getElementById('active-workshop-list');
   const pastHost=document.getElementById('past-events-panel');
@@ -505,8 +521,8 @@ function renderWorkshopChoices() {
   const available=workshopSettings.filter(w=>w.status==='open');
   const past=workshopSettings.filter(w=>w.status==='closed'||w.status==='completed');
   updatePublicWorkshopVisibility(available.length>0);
-  host.innerHTML=available.length?`<div class="future-events"><h4>Additional active workshops</h4>${available.map(w=>`<label class="check event-choice"><input type="checkbox" class="future-workshop-choice" value="${escapeHtml(w.id)}"><span><strong>${escapeHtml(w.title)}</strong><small>Date: ${escapeHtml(w.date||'TBA')} · Time: ${escapeHtml(w.time||'TBA')} · Venue: ${escapeHtml(w.venue||'TBA')}</small></span></label>`).join('')}</div>`:'';
-  pastHost.innerHTML=past.length?`<div class="future-events"><h4>Past / expired events</h4>${past.map(w=>`<div class="past-event-row"><strong>${escapeHtml(w.title)}</strong><small>Date: ${escapeHtml(w.date||'TBA')} · Time: ${escapeHtml(w.time||'TBA')} · Venue: ${escapeHtml(w.venue||'TBA')}</small></div>`).join('')}</div>`:'<p class="microcopy">No past events are recorded.</p>';
+  host.innerHTML=available.length?`<div class="future-events"><h4>Additional active workshops</h4>${available.map(w=>{const details=formatEventDetails(w);return `<label class="check event-choice"><input type="checkbox" class="future-workshop-choice" value="${escapeHtml(w.id)}" aria-label="${escapeHtml(`${w.title}. ${details}.`)}"><span class="event-choice-copy"><strong>${escapeHtml(w.title)}</strong><small>${escapeHtml(details)}</small></span></label>`;}).join('')}</div>`:'';
+  pastHost.innerHTML=past.length?`<div class="future-events"><h4>Past events</h4>${past.map(w=>`<div class="past-event-row"><strong>${escapeHtml(w.title)}</strong><small>${escapeHtml(formatEventDetails(w))}</small></div>`).join('')}</div>`:'<p class="microcopy">No past events are recorded.</p>';
 }
 
 async function loadWorkshopSettings(){
@@ -623,7 +639,7 @@ async function saveWorkshopSettings(){
 form.elements.Attendance_Mode.addEventListener('change', updateAttendanceVisibility);
 form.elements.Bill_To.addEventListener('change',updateBillingVisibility);
 form.elements.Gala_Dinner_Interest.addEventListener('change',updateGalaVisibility);
-document.getElementById('show-past-events').addEventListener('click',event=>{const panel=document.getElementById('past-events-panel'),open=panel.hidden;panel.hidden=!open;event.currentTarget.setAttribute('aria-expanded',String(open));event.currentTarget.textContent=open?'Hide Past / Expired Events':'Show Past / Expired Events';});
+document.getElementById('show-past-events').addEventListener('click',event=>{const panel=document.getElementById('past-events-panel'),open=panel.hidden;panel.hidden=!open;event.currentTarget.setAttribute('aria-expanded',String(open));event.currentTarget.textContent=open?'Hide past events':'Show past events';});
 document.getElementById('payment-proof').addEventListener('change', event => {
   const allowed = ['application/pdf','image/jpeg','image/png','image/webp'];
   const selected = Array.from(event.target.files || []);

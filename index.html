@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="style.css?v=7">
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script defer src="app.js?v=24"></script>
+  <script defer src="app.js?v=25"></script>
 </head>
 <body>
   <header class="hero"><img src="new2an-banner.png" alt="NEW2AN 2026, Colombo coastal panorama" width="2500" height="534"><div class="hero-shade"></div><div class="hero-copy"><p class="eyebrow">26th International Conference</p><h1>Conference registration</h1><p>15–17 December 2026 · Colombo, Sri Lanka</p></div></header>
@@ -39,16 +39,16 @@
         </section>
 
         <section class="form-section" id="special-events-section">
-          <div class="section-heading"><span>03</span><div><h3>Events</h3><p>Select the events you plan to attend. TBA means to be announced.</p></div></div>
+          <div class="section-heading"><span>03</span><div><h3>Events</h3><p>Select the events you plan to attend.</p></div></div>
           <div id="active-workshop-list"></div>
           <div class="future-events special-events">
-            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="panel-discussion-01-future-research-ai"><span><strong>Panel Discussion 01: The Future of Research in the Age of AI</strong><small>Date: 15 December 2026 · Time: TBA · Venue: Galle Face Hotel, Colombo</small></span></label>
-            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="panel-discussion-02-ai-public-policy"><span><strong>Panel Discussion 02: AI for Public Policy — Ethics and Responsible Innovation</strong><small>Date: 15 December 2026 · Time: TBA · Venue: Galle Face Hotel, Colombo</small></span></label>
-            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="digital-transformation-ai-panel"><span><strong>Panel Discussion: Digital Transformation Through AI</strong><small>Date: 16 December 2026 · Time: 2:00–3:00 p.m. · Venue: SLIIT premises</small></span></label>
-            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="ieee-comsoc-workshop"><span><strong>IEEE COMSOC Workshop</strong><small>Date: 16 December 2026 · Time: TBA · Venue: TBA</small></span></label>
-            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="ieee-sps-industry-forum"><span><strong>Industry Forum (IEEE Signal Processing Society)</strong><small>Date: 16 December 2026 · Time: TBA · Venue: TBA</small></span></label>
-            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="innovation-workshop"><span><strong>Innovation Workshop</strong><small>Date: 16 December 2026 · Time: TBA · Venue: TBA</small></span></label>
-            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="global-undergraduate-hackathon"><span><strong>Global Undergraduate Hackathon</strong><small>Date: TBA · Time: TBA · Venue: TBA</small></span></label>
+            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="panel-discussion-01-future-research-ai" aria-label="Panel Discussion 01: The Future of Research in the Age of AI. 15 December 2026 at Galle Face Hotel, Colombo. Time to be announced."><span class="event-choice-copy"><strong>Panel Discussion 01: The Future of Research in the Age of AI</strong><small>15 December 2026 · Galle Face Hotel, Colombo · Time to be announced</small></span></label>
+            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="panel-discussion-02-ai-public-policy" aria-label="Panel Discussion 02: AI for Public Policy — Ethics and Responsible Innovation. 15 December 2026 at Galle Face Hotel, Colombo. Time to be announced."><span class="event-choice-copy"><strong>Panel Discussion 02: AI for Public Policy — Ethics and Responsible Innovation</strong><small>15 December 2026 · Galle Face Hotel, Colombo · Time to be announced</small></span></label>
+            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="digital-transformation-ai-panel" aria-label="Panel Discussion: Digital Transformation Through AI. 16 December 2026, 2:00 to 3:00 p.m., at SLIIT premises."><span class="event-choice-copy"><strong>Panel Discussion: Digital Transformation Through AI</strong><small>16 December 2026 · 2:00–3:00 p.m. · SLIIT premises</small></span></label>
+            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="ieee-comsoc-workshop" aria-label="IEEE COMSOC Workshop. 16 December 2026. Time and venue to be announced."><span class="event-choice-copy"><strong>IEEE COMSOC Workshop</strong><small>16 December 2026 · Time and venue to be announced</small></span></label>
+            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="ieee-sps-industry-forum" aria-label="Industry Forum, IEEE Signal Processing Society. 16 December 2026. Time and venue to be announced."><span class="event-choice-copy"><strong>Industry Forum (IEEE Signal Processing Society)</strong><small>16 December 2026 · Time and venue to be announced</small></span></label>
+            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="innovation-workshop" aria-label="Innovation Workshop. 16 December 2026. Time and venue to be announced."><span class="event-choice-copy"><strong>Innovation Workshop</strong><small>16 December 2026 · Time and venue to be announced</small></span></label>
+            <label class="check event-choice"><input type="checkbox" class="special-event-choice" value="global-undergraduate-hackathon" aria-label="Global Undergraduate Hackathon. Schedule to be announced."><span class="event-choice-copy"><strong>Global Undergraduate Hackathon</strong><small>Schedule to be announced</small></span></label>
           </div>
           <div class="event-flyer-grid">
             <figure class="event-flyer"><img src="panel-discussion-01-future-of-research-ai.jpg" alt="Flyer for Panel Discussion 01, The Future of Research in the Age of AI"><figcaption>Panel Discussion 01 · 15 December 2026 · Galle Face Hotel</figcaption></figure>
@@ -56,7 +56,7 @@
             <figure class="event-flyer"><img src="digital-transformation-ai-panel.jpg" alt="Flyer for the Digital Transformation Through AI panel discussion"><figcaption>Digital Transformation Through AI · 16 December 2026 · SLIIT premises</figcaption></figure>
           </div>
           <label>Special-event note<textarea name="Special_Event_Notes" rows="2" placeholder="Optional accessibility, participation or scheduling question"></textarea></label>
-          <button type="button" class="past-events-toggle" id="show-past-events" aria-expanded="false">Show Past / Expired Events</button>
+          <button type="button" class="past-events-toggle" id="show-past-events" aria-expanded="false">Show past events</button>
           <div id="past-events-panel" hidden></div>
         </section>
 
@@ -79,12 +79,12 @@
       <div class="dashboard-head"><div><p class="eyebrow ink">Additional activities</p><h2>Events and competitions</h2><p>Use the separate links shown below.</p></div></div>
       <div class="event-grid">
         <article class="event-card featured"><span>Separate registration</span><h3>3MT Competition</h3><div class="event-price"><strong>LKR 5,000</strong><span>Local participants</span><a class="btn primary" href="https://www.crisglobal.org/#new2an" target="_blank" rel="noopener">Proceed to payment</a></div><div class="event-price"><strong>USD 30</strong><span>International participants</span><a class="btn primary" href="https://www.crisglobal.org/#new2an" target="_blank" rel="noopener">Proceed to payment</a></div></article>
-        <article class="event-card"><span>Free competition · registration link pending</span><h3>Global Undergraduate Hackathon</h3><p>Teams of 3–5 undergraduate students. Registration and guidelines: TBA.</p><a class="btn secondary" href="https://new2an.com/hackathon.html" target="_blank" rel="noopener">View details</a></article>
-        <article class="event-card featured"><span>Registration open</span><h3>The Future of Research in the Age of AI</h3><p>15 December 2026 · Galle Face Hotel, Colombo · Time: TBA</p><a class="btn primary" href="#registration">Register interest</a></article>
-        <article class="event-card featured"><span>Registration open</span><h3>AI for Public Policy: Ethics and Responsible Innovation</h3><p>15 December 2026 · Galle Face Hotel, Colombo · Time: TBA</p><a class="btn primary" href="#registration">Register interest</a></article>
+        <article class="event-card"><span>Free competition · registration link pending</span><h3>Global Undergraduate Hackathon</h3><p>Teams of 3–5 undergraduate students. Registration details and guidelines will be announced.</p><a class="btn secondary" href="https://new2an.com/hackathon.html" target="_blank" rel="noopener">View details</a></article>
+        <article class="event-card featured"><span>Registration open</span><h3>The Future of Research in the Age of AI</h3><p>15 December 2026 · Galle Face Hotel, Colombo · Time to be announced</p><a class="btn primary" href="#registration">Register interest</a></article>
+        <article class="event-card featured"><span>Registration open</span><h3>AI for Public Policy: Ethics and Responsible Innovation</h3><p>15 December 2026 · Galle Face Hotel, Colombo · Time to be announced</p><a class="btn primary" href="#registration">Register interest</a></article>
         <article class="event-card featured"><span>Free · interest registration open</span><h3>Digital Transformation Through AI</h3><p>Panel discussion on innovation, leadership and responsible adoption. 16 December 2026, 2:00–3:00 p.m., at SLIIT premises.</p><a class="btn primary" href="#registration">Register your interest</a></article>
-        <article class="event-card"><span>Free · registration open</span><h3>IEEE Signal Processing Society Industry Forum</h3><p>16 December 2026 · Time: TBA · Venue: TBA</p><a class="btn secondary" href="#registration">Register interest</a></article>
-        <article class="event-card"><span>Free · registration open</span><h3>Innovation Workshop</h3><p>16 December 2026 · Time: TBA · Venue: TBA</p><a class="btn secondary" href="#registration">Register interest</a></article>
+        <article class="event-card"><span>Free · registration open</span><h3>IEEE Signal Processing Society Industry Forum</h3><p>16 December 2026 · Time and venue to be announced</p><a class="btn secondary" href="#registration">Register interest</a></article>
+        <article class="event-card"><span>Free · registration open</span><h3>Innovation Workshop</h3><p>16 December 2026 · Time and venue to be announced</p><a class="btn secondary" href="#registration">Register interest</a></article>
       </div>
     </section>
 
