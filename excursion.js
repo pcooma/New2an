@@ -45,7 +45,7 @@ function updateExcursionFields(){const active=travelForm.elements.Excursion_Inte
 
 function updatePassportStatus(){
   const node=document.getElementById('passport-file-status');
-  node.textContent=passportFile?`${passportFile.name} · ${(passportFile.size/1024/1024).toFixed(2)} MB selected.`:(passportOnFile?'A passport bio page is already stored. Choose a file only to add a replacement version.':'No passport file selected.');
+  node.textContent=passportFile?`${passportFile.name} · ${(passportFile.size/1024/1024).toFixed(2)} MB selected.`:(passportOnFile?'A passport information page is already stored. Select a file only to replace it.':'No file selected.');
 }
 
 function fileToPayload(file){
@@ -67,7 +67,7 @@ document.getElementById('travel-load').addEventListener('click',async()=>{
 
 document.getElementById('passport-file').addEventListener('change',event=>{
   const file=event.target.files[0]||null;
-  if(file&&(!TRAVEL_CONFIG.acceptedTypes.includes(file.type)||file.size>TRAVEL_CONFIG.maxFileBytes)){passportFile=null;event.target.value='';showMessage(submitMessage,'Passport bio page must be a PDF, JPEG, PNG or WebP file no larger than 5 MB.','error');}
+  if(file&&(!TRAVEL_CONFIG.acceptedTypes.includes(file.type)||file.size>TRAVEL_CONFIG.maxFileBytes)){passportFile=null;event.target.value='';showMessage(submitMessage,'The passport information page must be a PDF, JPEG, PNG, or WebP file no larger than 5 MB.','error');}
   else{passportFile=file;showMessage(submitMessage,'');}
   updatePassportStatus();
 });
@@ -75,7 +75,7 @@ document.getElementById('passport-file').addEventListener('change',event=>{
 travelForm.addEventListener('submit',async event=>{
   event.preventDefault();
   if(!travelForm.reportValidity())return;
-  if(flightRequested()&&!passportFile&&!passportOnFile){showMessage(submitMessage,'Upload the passport bio page before submitting an organiser-arranged ticket request.','error');document.getElementById('passport-file').focus();return;}
+  if(flightRequested()&&!passportFile&&!passportOnFile){showMessage(submitMessage,'Upload the passport information page before submitting a flight booking request.','error');document.getElementById('passport-file').focus();return;}
   if(travelForm.elements.Passport_Expiry_Date.value&&travelForm.elements.Passport_Issue_Date.value&&travelForm.elements.Passport_Expiry_Date.value<=travelForm.elements.Passport_Issue_Date.value){showMessage(submitMessage,'Passport expiry date must be after its issue date.','error');return;}
   const button=document.getElementById('travel-submit'),data={Reference_ID:currentReference,Email:travelForm.elements.Email.value};
   new FormData(travelForm).forEach((value,key)=>{data[key]=value;});
@@ -85,7 +85,7 @@ travelForm.addEventListener('submit',async event=>{
   try{
     const result=await travelApi({action:'submitTravelDetails',data,editToken});editToken=result.editToken||editToken;passportOnFile=result.passportOnFile;passportFile=null;document.getElementById('passport-file').value='';updatePassportStatus();showMessage(submitMessage,`Saved successfully against ${result.referenceId}. The organising team can now review your travel request.`,'success');
   }catch(error){showMessage(submitMessage,error.name==='AbortError'?'The server took too long to respond. Please retry; do not assume the details were saved.':error.message,'error');}
-  finally{button.disabled=false;button.textContent='Save travel & excursion details';}
+  finally{button.disabled=false;button.textContent='Save details';}
 });
 
 document.getElementById('travel-assistance').addEventListener('change',updateFlightFields);

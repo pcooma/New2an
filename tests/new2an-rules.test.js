@@ -70,7 +70,7 @@ assert.deepStrictEqual(Array.from(context.validateTravelDetails(context.normalis
 assert(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Dietary_Preference:'Vegan'}),false).some(x=>x.includes('dietary preference')));
 assert.deepStrictEqual(Array.from(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Dietary_Preference:'Non-vegetarian'}),false)),[]);
 assert(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Passport_Expiry_Date:'2021-01-01'}),false).some(x=>x.includes('expiry date')));
-assert(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Passport_Bio_Page_Base64:[]}),false).some(x=>x.includes('passport bio page')));
+assert(context.validateTravelDetails(context.normaliseTravelDetails({...validTravel,Passport_Bio_Page_Base64:[]}),false).some(x=>x.includes('passport information page')));
 
 const schemaHeaders = vm.runInContext('HEADERS.slice()',context);
 const reorderedHeaders = schemaHeaders.filter(header=>header!=='Billing_Legal_Name').concat('Billing_Legal_Name');

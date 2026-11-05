@@ -254,8 +254,8 @@ function validateTravelDetails(d,hasPassportOnFile){
     if(d.Preferred_Arrival_Sri_Lanka_Date&&d.Preferred_Departure_Sri_Lanka_Date&&d.Preferred_Departure_Sri_Lanka_Date<d.Preferred_Arrival_Sri_Lanka_Date)errors.push('Departure from Sri Lanka cannot be before arrival in Sri Lanka.');
     if(d.Passport_Issue_Date&&d.Passport_Expiry_Date&&d.Passport_Expiry_Date<=d.Passport_Issue_Date)errors.push('Passport expiry date must be after its issue date.');
     const uploads=Array.isArray(d.Passport_Bio_Page_Base64)?d.Passport_Bio_Page_Base64:[];
-    if(!uploads.length&&!hasPassportOnFile)errors.push('Upload the passport bio page for organiser-arranged air travel.');
-    if(uploads.length>1)errors.push('Upload one passport bio-page file only.');
+    if(!uploads.length&&!hasPassportOnFile)errors.push('Upload the passport information page for flight booking.');
+    if(uploads.length>1)errors.push('Upload one passport information page only.');
     uploads.forEach(function(file){const issue=validateTravelUpload(file);if(issue)errors.push(issue);});
   }
   return errors;
@@ -487,9 +487,9 @@ function sendTravelFollowUpEmail(data){
 }
 
 function validateTravelUpload(file){
-  if(!file||!file.data)return 'The passport bio-page file is unreadable.';
-  if(ALLOWED_UPLOAD_MIME.indexOf(String(file.mimeType||''))<0)return 'The passport bio page must be a PDF, JPEG, PNG or WebP file.';
-  if(Math.ceil(String(file.data).length*3/4)>MAX_UPLOAD_BYTES)return 'The passport bio-page file must be 5 MB or smaller.';
+  if(!file||!file.data)return 'The passport information page file is unreadable.';
+  if(ALLOWED_UPLOAD_MIME.indexOf(String(file.mimeType||''))<0)return 'The passport information page must be a PDF, JPEG, PNG, or WebP file.';
+  if(Math.ceil(String(file.data).length*3/4)>MAX_UPLOAD_BYTES)return 'The passport information page file must be 5 MB or smaller.';
   return '';
 }
 

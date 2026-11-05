@@ -94,16 +94,16 @@ function clarifyParticipantCopy() {
   document.querySelector('.intro .eyebrow').textContent = 'Conference registration';
   document.querySelector('.intro h2').textContent = 'Register for NEW2AN 2026';
   document.querySelector('.intro>div>p:last-child').textContent = 'Complete the form below.';
-  document.querySelector('.lookup-card strong').textContent = 'Returning to your registration?';
-  document.querySelector('.lookup-card span').textContent = 'Enter the reference ID issued by this form and the same email address you used previously.';
-  setLabel('Full_Name','Full name as entered in your paper-submission record');
+  document.querySelector('.lookup-card strong').textContent = 'Already registered?';
+  document.querySelector('.lookup-card span').textContent = 'Enter your reference ID and registration email.';
+  setLabel('Full_Name','Full name');
   setPlaceholder('Full_Name','For example, Prof. Maria Chen');
   setLabel('Certificate_Name','Name to print on your badge and certificate');
   setPlaceholder('Certificate_Name','Leave blank to use your full name above');
   setLabel('Phone','Mobile or WhatsApp number');
   setLabel('Country_of_Residence','Country where you currently live');
-  setLabel('Attendance_Mode','How will you attend?');
-  setLabel('CMT_Changes','Changes from your paper-submission record (CMT)');
+  setLabel('Attendance_Mode','Attendance type');
+  setLabel('CMT_Changes','Changes to your CMT submission');
   setPlaceholder('CMT_Changes','List any approved change to the presenter, paper title or affiliation. Leave blank if nothing changed.');
   setLabel('Workshop_Attendance','Did you attend the workshop held on 21 July 2026?');
   setLabel('Future_Workshop_Updates','Would you like email updates about any new workshops?');
@@ -144,16 +144,16 @@ function clarifyParticipantCopy() {
   setLabel('Excursion_Mobility_Needs','Mobility or accessibility assistance needed during the excursion');
   setLabel('Excursion_Dietary_Needs','Evening-refreshment allergies or dietary requirements');
   setLabel('Excursion_Guide_Language','Preferred language for the excursion guide');
-  setLabel('Bill_To','Who should the payment invoice be addressed to?');
-  setLabel('Billing_Legal_Name','Exact legal name to print under Bill to');
-  setLabel('Billing_Email','Email address for the invoice or finance office');
-  setLabel('Billing_Address','Address to show on the invoice');
-  setLabel('Purchase_Order','Purchase order number or tax reference, if required by your institution');
-  setLabel('Additional_Info','Other billing information');
-  setLabel('Payment_Stage','Current payment status');
-  setLabel('Transaction_Reference','Bank or online payment reference');
-  document.querySelector('.proforma-box strong').textContent = 'Payment invoice';
-  document.getElementById('proforma-btn').textContent = 'Download payment invoice';
+  setLabel('Bill_To','Invoice recipient');
+  setLabel('Billing_Legal_Name','Billing name');
+  setLabel('Billing_Email','Billing email');
+  setLabel('Billing_Address','Billing address');
+  setLabel('Purchase_Order','Purchase order or tax reference');
+  setLabel('Additional_Info','Additional billing information');
+  setLabel('Payment_Stage','Payment status');
+  setLabel('Transaction_Reference','Payment reference');
+  document.querySelector('.proforma-box strong').textContent = 'Invoice';
+  document.getElementById('proforma-btn').textContent = 'Download invoice';
   document.getElementById('submit-btn').textContent = 'Submit';
   const visitCopy=document.querySelector('#visit-section .section-heading p');
   if(visitCopy)visitCopy.textContent = 'Tell us what assistance you may need. These answers are planning requests only and do not confirm flights, airport transfers, hotels or visa approval.';
@@ -275,7 +275,7 @@ function updateCategoryState() {
   paymentLink.hidden=!checkoutAvailable;
   if(checkoutAvailable){
     paymentLink.href=registrationUrl;
-    paymentLink.textContent='Open official organiser checkout';
+    paymentLink.textContent='Proceed to payment';
     paymentNote.textContent=`${price.currency} ${price.amount.toLocaleString('en-GB')} · Select “${categoryLabel}” in the checkout.`;
   }
 
@@ -285,7 +285,7 @@ function updateCategoryState() {
   document.getElementById('gala-price').textContent=`LKR ${galaFee.toLocaleString('en-GB')} · separate ticket`;
   document.getElementById('gala-pay-link').href=CONFIG.crisPaymentUrl;
   const galaNote=document.getElementById('gala-payment-note');
-  if(galaNote)galaNote.textContent=`On the CRIS page, choose Gala Dinner → ${category==='LK_AUTHOR'?'Registering Author':'Non-presenting Attendee'}.`;
+  if(galaNote)galaNote.textContent=`Select “Gala Dinner – ${category==='LK_AUTHOR'?'Sri Lankan author':'Sri Lankan affiliation'}” in the payment page.`;
   galaBox.querySelectorAll('input,select').forEach(control=>{control.disabled=!local;});
   if(!local){form.elements.Gala_Dinner_Interest.value='No';form.elements.Gala_Dinner_Payment_Reference.value='';}
   if(category&&!author&&Number(paperCount.value)){paperCount.value='0';renderPapers();}
@@ -340,10 +340,10 @@ function validateBusinessRules(data) {
   if(data.Attendance_Mode==='Request online presentation (international author; approval required)'&&data.Registration_Category!=='INT_AUTHOR')return 'Online presentation may be requested only by an international author and still requires organiser approval.';
   if(authorCategory&&data.Attendance_Mode==='Online session access (non-presenting)')return 'An author cannot use non-presenting online access to satisfy the paper-presentation requirement.';
   if (data.Payment_Stage !== 'NOT_PAID') {
-    if (!data.Transaction_Reference.trim()) return 'Enter the reference number shown on your payment confirmation.';
-    if (!paymentProofFiles.length && !paymentProofPreviouslyUploaded) return 'Upload proof of payment or the gateway receipt.';
+    if (!data.Transaction_Reference.trim()) return 'Enter the payment reference.';
+    if (!paymentProofFiles.length && !paymentProofPreviouslyUploaded) return 'Upload proof of payment.';
     if(data.Gala_Dinner_Interest==='Yes'&&!data.Gala_Dinner_Payment_Reference.trim())return 'Enter the gala dinner payment reference.';
-    if(data.Gala_Dinner_Interest==='Yes'&&!galaProofFile&&!galaProofPreviouslyUploaded)return 'Upload the separate gala dinner payment confirmation.';
+    if(data.Gala_Dinner_Interest==='Yes'&&!galaProofFile&&!galaProofPreviouslyUploaded)return 'Upload the gala dinner proof of payment.';
   }
   if(data.Gala_Dinner_Interest==='Yes'&&!isSriLankanCategory(data.Registration_Category))return 'Published gala dinner tickets are currently available only for Sri Lankan-affiliated registration categories.';
   return '';
@@ -452,7 +452,7 @@ function updateBillingVisibility(){
 
 function renderProofList() {
   const box = document.getElementById('proof-list');
-  if (!paymentProofFiles.length) { box.textContent = paymentProofPreviouslyUploaded ? 'Previously uploaded proof will be retained.' : 'No proof selected.'; return; }
+  if (!paymentProofFiles.length) { box.textContent = paymentProofPreviouslyUploaded ? 'Previously uploaded file will be retained.' : 'No file selected.'; return; }
   box.textContent = paymentProofFiles.map(f => `${f.name} (${(f.size/1024/1024).toFixed(2)} MB)`).join(' · ');
 }
 
@@ -467,7 +467,7 @@ function updateGalaVisibility(){
 
 function renderGalaProofList(){
   const box=document.getElementById('gala-proof-list');if(!box)return;
-  box.textContent=galaProofFile?`${galaProofFile.name} (${(galaProofFile.size/1024/1024).toFixed(2)} MB)`:(galaProofPreviouslyUploaded?'Previously uploaded gala proof will be retained.':'No gala dinner proof selected.');
+  box.textContent=galaProofFile?`${galaProofFile.name} (${(galaProofFile.size/1024/1024).toFixed(2)} MB)`:(galaProofPreviouslyUploaded?'Previously uploaded file will be retained.':'No file selected.');
 }
 
 function renderWorkshopChoices() {
@@ -620,7 +620,7 @@ async function generateProforma() {
   const institutional=form.elements.Bill_To.value==='Institution / organisation';
   const required = ['Title','Full_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Registration_Category','Attendance_Mode','Bill_To'].concat(institutional?['Billing_Legal_Name','Billing_Email','Billing_Address']:[]);
   const missing = required.map(name => form.elements[name]).find(el => !el || !String(el.value).trim());
-  if (missing) { missing.focus(); setMessage('Complete the required attendee, paper and billing fields before downloading the payment invoice.', 'error'); return; }
+  if (missing) { missing.focus(); setMessage('Complete the required participant, paper, and billing fields before downloading the invoice.', 'error'); return; }
   if (isAuthorCategory(registrationCategory.value) && Number(paperCount.value) < 1) { setMessage('Presenting authors must enter at least one accepted paper.', 'error'); return; }
   for (let i=1;i<=Number(paperCount.value);i++) if (!form.elements[`Paper_${i}_ID`]?.value.trim() || !form.elements[`Paper_${i}_Title`]?.value.trim()) { setMessage(`Complete the ID and title for paper ${i}.`, 'error'); return; }
   if (!window.jspdf) { setMessage('The PDF library is unavailable. Check your connection and retry.', 'error'); return; }
@@ -630,7 +630,7 @@ async function generateProforma() {
   if(!form.reportValidity()){setMessage('Complete the registration and policy agreement before generating the invoice.','error');return;}
   const data = toObject(form),businessIssue=validateBusinessRules(data);let price=currentRegistrationPrice();
   if(businessIssue){setMessage(businessIssue,'error');return;}
-  const archiveButton=document.getElementById('proforma-btn');archiveButton.disabled=true;archiveButton.textContent='Securing registration...';
+  const archiveButton=document.getElementById('proforma-btn');archiveButton.disabled=true;archiveButton.textContent='Preparing invoice...';
   try{
     if(currentReferenceId)data.Reference_ID=currentReferenceId;
     data.Payment_Proof_Base64=paymentProofFiles.length?await Promise.all(paymentProofFiles.map(fileToBase64)):(paymentProofPreviouslyUploaded?'(uploaded — see folder)':[]);
@@ -646,7 +646,7 @@ async function generateProforma() {
     data.Gala_Dinner_Fee=Number(authoritative.galaDinnerFee||0);data.Gala_Dinner_Currency=String(authoritative.galaDinnerCurrency||'');
     data.Excursion_Fee_Per_Person_USD=Number(authoritative.excursionFeePerPersonUsd||0);data.Excursion_Total_USD=Number(authoritative.excursionTotalUsd||0);data.Excursion_USD_to_EUR_Rate=Number(authoritative.excursionUsdToEurRate||0);data.Excursion_Total_EUR_Indicative=Number(authoritative.excursionTotalEurIndicative||0);
     if(uploadedProofs){paymentProofFiles=[];paymentProofPreviouslyUploaded=true;renderProofList();}
-  }catch(error){archiveButton.disabled=false;archiveButton.textContent='Download payment invoice';setMessage(error.name==='AbortError'?'The registration service took too long to respond. Please retry.':error.message,'error');return;}
+  }catch(error){archiveButton.disabled=false;archiveButton.textContent='Download invoice';setMessage(error.name==='AbortError'?'The registration service took too long to respond. Please retry.':error.message,'error');return;}
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({unit:'mm',format:'a4'});
   const left=14,right=196,width=right-left,navy=[9,35,60],ink=[23,39,51],muted=[90,105,112],rule=[205,218,222];
@@ -690,7 +690,7 @@ async function generateProforma() {
     setMessage(`${data.Gala_Dinner_Interest==='Yes'?'Separate registration and gala dinner invoices were':'The registration invoice was'} archived and downloaded. Keep reference ID ${currentReferenceId}.`, 'success');
   }catch(error){
     setMessage(error.name==='AbortError'?'The invoice archive took too long to respond. Please retry; no unarchived download was created.':`The invoice could not be archived, so it was not downloaded. ${error.message}`,'error');
-  }finally{button.disabled=false;button.textContent='Download payment invoice';}
+  }finally{button.disabled=false;button.textContent='Download invoice';}
 }
 
 paperCount.addEventListener('change', renderPapers);
