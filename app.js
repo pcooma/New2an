@@ -93,7 +93,7 @@ function clarifyParticipantCopy() {
   const setPlaceholder = (name, text) => { const control=form.elements.namedItem(name); if(control) control.placeholder=text; };
   document.querySelector('.intro .eyebrow').textContent = 'Conference registration';
   document.querySelector('.intro h2').textContent = 'Register for NEW2AN 2026';
-  document.querySelector('.intro>div>p:last-child').textContent = 'Use this shorter form for conference registration, papers, active events, billing and payment. Travel and excursion details are completed later from the post-registration tab.';
+  document.querySelector('.intro>div>p:last-child').textContent = 'Complete the form below.';
   document.querySelector('.lookup-card strong').textContent = 'Returning to your registration?';
   document.querySelector('.lookup-card span').textContent = 'Enter the reference ID issued by this form and the same email address you used previously.';
   setLabel('Full_Name','Full name as entered in your paper-submission record');
@@ -237,7 +237,6 @@ function refreshFee() {
   const earlyDate=formatRegistrationDate(publicSettings.earlyDeadline||CONFIG.earlyDeadline);
   const closeDate=formatRegistrationDate(publicSettings.registrationCloseDate||CONFIG.registrationCloseDate);
   document.getElementById('fee-deadline').textContent = isSriLankanCategory(category) ? (price.early?`Early fee through ${earlyDate}`:`Late fee after ${earlyDate}`) : `Standard international fee · closes ${closeDate}`;
-  document.getElementById('fee-note').textContent = `${isSriLankanCategory(category) ? (price.early?'Sri Lankan-affiliation early fee.':'Includes the 25% Sri Lankan-affiliation late surcharge.') : 'One international fee applies throughout registration.'} No student rate is published.`;
   updateRegistrationAvailability();
 }
 
@@ -246,10 +245,10 @@ function updateRegistrationAvailability() {
   const notice=document.getElementById('registration-window-message');
   if(notice){
     const lead=status==='upcoming'?`Registration opens ${openDate}.`:status==='closed'?`Registration closed ${closeDate}.`:`Registration is open until ${closeDate}.`;
-    notice.innerHTML=`<strong>${lead}</strong> The Sri Lankan-affiliation fee is LKR ${registrationFeeSetting('sriLankanEarlyFeeLkr',CONFIG.sriLankanEarlyFeeLkr).toLocaleString('en-GB')} through ${earlyDate} and LKR ${registrationFeeSetting('sriLankanLateFeeLkr',CONFIG.sriLankanLateFeeLkr).toLocaleString('en-GB')} after that.`;
+    notice.innerHTML=`<strong>${lead}</strong> Sri Lankan affiliation: LKR ${registrationFeeSetting('sriLankanEarlyFeeLkr',CONFIG.sriLankanEarlyFeeLkr).toLocaleString('en-GB')} through ${earlyDate}; LKR ${registrationFeeSetting('sriLankanLateFeeLkr',CONFIG.sriLankanLateFeeLkr).toLocaleString('en-GB')} afterward.`;
   }
   const paperNotice=document.getElementById('paper-deadline-message');
-  if(paperNotice)paperNotice.innerHTML=`<strong>Accepted papers:</strong> at least one full registration is required per accepted paper by ${earlyDate}. One international full registration may cover up to two papers when both are presented by the same registered author. Each Sri Lankan-affiliated author registration covers one paper.`;
+  if(paperNotice)paperNotice.innerHTML=`<strong>Authors:</strong> register by ${earlyDate}. One international author registration covers up to two papers by the same presenter; one Sri Lankan author registration covers one paper.`;
   const locked=status!=='open'&&!currentReferenceId;
   const submit=document.getElementById('submit-btn');
   if(submit){submit.disabled=locked;submit.textContent=locked?(status==='upcoming'?'Registration not open yet':'New registration closed'):'Submit';}
@@ -277,7 +276,7 @@ function updateCategoryState() {
   if(checkoutAvailable){
     paymentLink.href=registrationUrl;
     paymentLink.textContent='Open official organiser checkout';
-    paymentNote.textContent=`Registration fee: ${price.currency} ${price.amount.toLocaleString('en-GB')}. On the CRIS page, choose “${categoryLabel}”, complete its guided checkout, and keep the payment confirmation.`;
+    paymentNote.textContent=`${price.currency} ${price.amount.toLocaleString('en-GB')} · Select “${categoryLabel}” in the checkout.`;
   }
 
   const galaBox=document.getElementById('gala-box');
