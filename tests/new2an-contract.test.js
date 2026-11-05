@@ -13,6 +13,7 @@ assert.match(html, /NEW2AN 2026/);
 assert.match(html, /15–17 December 2026/);
 assert.match(html, /5–25 November 2026/);
 assert.match(html, /LKR 40,000 through 15 November/);
+assert.match(html, /International participants: EUR 400/);
 assert.doesNotMatch(html, /No student rate|student rate or discount/);
 assert.match(html, /<option value="LK_NON_AUTHOR">Sri Lankan affiliation<\/option>/);
 assert.doesNotMatch(html, /Non-presenting attendee — Sri Lankan affiliation/);

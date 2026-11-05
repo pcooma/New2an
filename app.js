@@ -245,7 +245,7 @@ function updateRegistrationAvailability() {
   const notice=document.getElementById('registration-window-message');
   if(notice){
     const lead=status==='upcoming'?`Registration opens ${openDate}.`:status==='closed'?`Registration closed ${closeDate}.`:`Registration is open until ${closeDate}.`;
-    notice.innerHTML=`<strong>${lead}</strong> Sri Lankan affiliation: LKR ${registrationFeeSetting('sriLankanEarlyFeeLkr',CONFIG.sriLankanEarlyFeeLkr).toLocaleString('en-GB')} through ${earlyDate}; LKR ${registrationFeeSetting('sriLankanLateFeeLkr',CONFIG.sriLankanLateFeeLkr).toLocaleString('en-GB')} afterward.`;
+    notice.innerHTML=`<strong>${lead}</strong> International participants: EUR ${registrationFeeSetting('internationalFeeEur',CONFIG.internationalFeeEur).toLocaleString('en-GB')}. Sri Lankan affiliation: LKR ${registrationFeeSetting('sriLankanEarlyFeeLkr',CONFIG.sriLankanEarlyFeeLkr).toLocaleString('en-GB')} through ${earlyDate}; LKR ${registrationFeeSetting('sriLankanLateFeeLkr',CONFIG.sriLankanLateFeeLkr).toLocaleString('en-GB')} afterward.`;
   }
   const paperNotice=document.getElementById('paper-deadline-message');
   if(paperNotice)paperNotice.innerHTML=`<strong>Authors:</strong> register by ${earlyDate}. One international author registration covers up to two papers by the same presenter; one Sri Lankan author registration covers one paper.`;
