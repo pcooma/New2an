@@ -89,8 +89,8 @@ assert.deepStrictEqual(schemaSheet.headers,reorderedHeaders);
 assert(schemaHeaders.includes('Special_Event_Selections'));
 assert(schemaHeaders.includes('Special_Event_Notes'));
 
-const physicalHeaders=['Email','Reference_ID','Submission_Date','Status','Payment_Status','Payment_Proof_Files','Billing_Legal_Name','Manual_Note'];
-const storedRow=['old@example.org','NEW2AN2026-OLD1234','2026-01-01','PENDING','AWAITING_PAYMENT','','Old name','Keep this'];
+const physicalHeaders=['Email','Reference_ID','Submission_Date','Status','Payment_Status','Payment_Proof_Files','Billing_Legal_Name','Travel_Email_Sent_At','Manual_Note'];
+const storedRow=['old@example.org','NEW2AN2026-OLD1234','2026-01-01','PENDING','AWAITING_PAYMENT','','Old name','','Keep this'];
 const writeSheet={
   row:storedRow.slice(),appended:null,getLastColumn(){return physicalHeaders.length;},
   getRange(row){return{getValues:()=>[row===1?physicalHeaders.slice():this.row.slice()],setValues:values=>{this.row=values[0].slice();}};},
@@ -99,6 +99,18 @@ const writeSheet={
 context.writeSheetRecord(writeSheet,{Email:'new@example.org',Reference_ID:'NEW2AN2026-NEW1234',Billing_Legal_Name:'New legal name'},2);
 assert.strictEqual(writeSheet.row[0],'new@example.org');
 assert.strictEqual(writeSheet.row[1],'NEW2AN2026-NEW1234');
+assert.strictEqual(writeSheet.row[2],'2026-01-01');
+assert.strictEqual(writeSheet.row[3],'PENDING');
+assert.strictEqual(writeSheet.row[4],'AWAITING_PAYMENT');
 assert.strictEqual(writeSheet.row[6],'New legal name');
-assert.strictEqual(writeSheet.row[7],'Keep this');
+assert.strictEqual(writeSheet.row[8],'Keep this');
+
+context.writeSheetRecord(writeSheet,{Travel_Email_Sent_At:'2026-11-10T05:45:47.307Z'},2);
+assert.strictEqual(writeSheet.row[0],'new@example.org');
+assert.strictEqual(writeSheet.row[1],'NEW2AN2026-NEW1234');
+assert.strictEqual(writeSheet.row[2],'2026-01-01');
+assert.strictEqual(writeSheet.row[3],'PENDING');
+assert.strictEqual(writeSheet.row[4],'AWAITING_PAYMENT');
+assert.strictEqual(writeSheet.row[7],'2026-11-10T05:45:47.307Z');
+assert.strictEqual(writeSheet.row[8],'Keep this');
 console.log('NEW2AN business-rule checks passed.');

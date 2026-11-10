@@ -358,7 +358,10 @@ function getSubmissions(params) {
   if(!validToken(params.token))return json({success:false,error:'Unauthorized.'});
   const values=getResources().sheet.getDataRange().getValues(), rows=[];
   const headers=values[0]||[];
-  for(let r=1;r<values.length;r++)rows.push(rowToObject(headers,values[r]));
+  for(let r=1;r<values.length;r++){
+    const item=rowToObject(headers,values[r]);
+    if(String(item.Reference_ID||'').trim())rows.push(item);
+  }
   return json({success:true,submissions:rows.reverse()});
 }
 
@@ -407,7 +410,7 @@ function rowToObject(headers,row){
 function writeSheetRecord(sheet,data,rowNumber){
   const headers=sheet.getRange(1,1,1,sheet.getLastColumn()).getValues()[0].map(String),map=headerMap(headers);
   const row=rowNumber?sheet.getRange(rowNumber,1,1,headers.length).getValues()[0]:headers.map(function(){return '';});
-  HEADERS.forEach(function(header){if(Object.prototype.hasOwnProperty.call(map,header))row[map[header]]=serialise(data[header]);});
+  HEADERS.forEach(function(header){if(Object.prototype.hasOwnProperty.call(map,header)&&Object.prototype.hasOwnProperty.call(data,header))row[map[header]]=serialise(data[header]);});
   if(rowNumber)sheet.getRange(rowNumber,1,1,headers.length).setValues([row]);else sheet.appendRow(row);
 }
 
