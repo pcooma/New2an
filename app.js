@@ -418,7 +418,7 @@ form.addEventListener('submit', async event => {
     const travelLink=data.Payment_Stage==='COMPLETED'?' You can now complete post-registration travel and excursion details from the Travel tab.':'';
     setMessage(`Registration saved. Your reference is ${result.referenceId}.${travelLink}`, 'success');
   } catch (error) { setMessage(error.name === 'AbortError' ? 'The server took too long to respond. Please retry; your draft is preserved.' : error.message, 'error'); }
-  finally { button.disabled = false; button.textContent = 'Submit'; updateRegistrationAvailability(); }
+  finally { button.disabled = false; button.textContent = 'Submit'; updateRegistrationAvailability(); if(message.textContent)message.scrollIntoView({behavior:'smooth',block:'center'}); }
 });
 
 let draftTimer;
@@ -734,7 +734,7 @@ async function generateProforma() {
     setMessage(`${data.Gala_Dinner_Interest==='Yes'?'Separate registration and gala dinner invoices were':'The registration invoice was'} archived and downloaded. Keep reference ID ${currentReferenceId}.`, 'success');
   }catch(error){
     setMessage(error.name==='AbortError'?'The invoice archive took too long to respond. Please retry; no unarchived download was created.':`The invoice could not be archived, so it was not downloaded. ${error.message}`,'error');
-  }finally{button.disabled=false;button.textContent='Download invoice';}
+  }finally{button.disabled=false;button.textContent='Download invoice';if(message.textContent)message.scrollIntoView({behavior:'smooth',block:'center'});}
 }
 
 paperCount.addEventListener('change', renderPapers);
