@@ -741,7 +741,7 @@ paperCount.addEventListener('change', renderPapers);
 registrationCategory.addEventListener('change',updateCategoryState);
 
 document.getElementById('lookup-btn').addEventListener('click', async () => {
-  const ref = document.getElementById('lookup-ref').value.trim();
+  const ref = document.getElementById('lookup-ref').value.trim().replace(/^REG-/i,'').toUpperCase();
   const email = document.getElementById('lookup-email').value.trim();
   if (!ref || !email) { setMessage('Enter both the reference ID and registration email.', 'error'); return; }
   try { const result = await api(null, `?action=getRegistration&ref=${encodeURIComponent(ref)}&email=${encodeURIComponent(email)}`); editToken=result.editToken||'';restore(result.data); setMessage(`Loaded ${ref}. You can securely update this registration for the next two hours.`, 'success'); form.scrollIntoView({behavior:'smooth'}); }
