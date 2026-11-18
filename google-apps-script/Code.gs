@@ -154,7 +154,7 @@ function normaliseRegistration(input) {
   ['Title','Full_Name','Certificate_Name','Email','Phone','Organization','Designation','Country_of_Residence','Nationality','Registration_Category','Participant_Role','Attendance_Mode','CMT_Changes','Workshop_Attendance','Future_Workshop_Updates','Workshop_Notes','Special_Event_Notes','Passport_Name','Passport_Issuing_Country','Visa_Support','Travel_Agency_Assistance','Accommodation_Assistance','Room_Preference','Arrival_Date','Departure_Date','Arrival_Details','Departure_Details','Venue_Transport','Dietary_Preference','Accessibility_Needs','Emergency_Contact_Name','Emergency_Contact_Phone','Visit_Notes','Support_Category','Support_Reply_Method','Support_Request','Excursion_Interest','Excursion_Participant_Names','Excursion_Group_Details','Excursion_Activity_Level','Excursion_Mobility_Needs','Excursion_Dietary_Needs','Excursion_Guide_Language','Bill_To','Billing_Legal_Name','Billing_Email','Billing_Address','Purchase_Order','Additional_Info','Gala_Dinner_Interest','Gala_Dinner_Payment_Reference','Payment_Stage','Transaction_Reference','Payment_Currency','Paper_1_ID','Paper_1_Title','Paper_2_ID','Paper_2_Title'].forEach(function(key) { output[key]=clean(output[key], key.indexOf('Notes') >= 0 || key.indexOf('Address') >= 0 || key.indexOf('Names') >= 0 || key.indexOf('Changes') >= 0 || key.indexOf('Request') >= 0 ? 2000 : 300); });
   output.Email = output.Email.toLowerCase();
   output.Billing_Email = output.Billing_Email.toLowerCase();
-  output.Reference_ID = clean(input.Reference_ID,40).toUpperCase();
+  output.Reference_ID = normReferenceId(input.Reference_ID);
   output.Paper_Count = Math.max(0,Math.min(2,parseInt(input.Paper_Count,10)||0));
   output.Excursion_Participant_Count = Math.max(0,Math.min(10,parseInt(input.Excursion_Participant_Count,10)||0));
   output.Excursion_Fee_Per_Person_USD = EXCURSION_FEE_USD;
@@ -202,7 +202,7 @@ function validateRegistration(d) {
 }
 
 function getRegistration(params) {
-  const ref=clean(params.ref,40).toUpperCase(), email=clean(params.email,300).toLowerCase();
+  const ref=normReferenceId(params.ref), email=clean(params.email,300).toLowerCase();
   if(!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(ref)||!email)return json({success:false,error:'Reference ID and email are required.'});
   const sheet=getResources().sheet, values=sheet.getDataRange().getValues();
   const headers=values[0]||[],map=headerMap(headers),refIndex=map.Reference_ID,emailIndex=map.Email;
@@ -211,7 +211,7 @@ function getRegistration(params) {
 }
 
 function saveTravelDetails(input,editToken) {
-  const referenceId=clean(input.Reference_ID,40).toUpperCase(),email=clean(input.Email,300).toLowerCase();
+  const referenceId=normReferenceId(input.Reference_ID),email=clean(input.Email,300).toLowerCase();
   if(!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(referenceId)||!email)return json({success:false,error:'Reference ID and registration email are required.'});
   const resources=getResources(),existing=findRow(resources.sheet,referenceId,'');
   if(!existing.rowNumber||existing.email.toLowerCase()!==email||!verifyEditToken(editToken,referenceId,email))return json({success:false,error:'Reload the registration with its reference and email before saving travel details.'});
@@ -436,7 +436,7 @@ function getOrCreateSubfolder(parent,name){
 }
 
 function saveInvoiceVersion(body){
-  const referenceId=clean(body.referenceId,40).toUpperCase();
+  const referenceId=normReferenceId(body.referenceId);
   const email=clean(body.email,300).toLowerCase();
   if(!/^NEW2AN2026-[A-Z0-9]{7,12}$/.test(referenceId))return json({success:false,error:'Invalid reference ID.'});
   const resources=getResources(),existing=findRow(resources.sheet,referenceId,'');
@@ -530,6 +530,7 @@ function feeFor(date,category){return registrationPriceFor(date,category||'INT_A
 function roundMoney(value){return Math.round(Number(value)*100)/100;}
 function roundRate(value){return Math.round(Number(value)*1000000)/1000000;}
 function makeReferenceId(){return 'NEW2AN2026-'+Utilities.getUuid().replace(/-/g,'').slice(0,9).toUpperCase();}
+function normReferenceId(value){return clean(value,40).toUpperCase().replace(/^REG-/,'');}
 function editTokenSecret(){
   const props=PropertiesService.getScriptProperties();let secret=props.getProperty('EDIT_TOKEN_SECRET');
   if(!secret){secret=Utilities.getUuid()+Utilities.getUuid()+Utilities.getUuid();props.setProperty('EDIT_TOKEN_SECRET',secret);}
